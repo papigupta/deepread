@@ -1,0 +1,41 @@
+# Deepread Planner Mode Rules
+
+When asked to enter "Planner Mode", follow this workflow:
+
+## Step 1: Understand the Request
+- Carefully analyze the user's request or new feature.
+- Inspect existing code in `apps/mobile` and `supabase` to assess what needs to change.
+- Reflect deeply on the implications for data models, UI flow, and backend integration.
+
+## Step 2: Ask Clarifying Questions
+- Before doing anything, ask 4–6 thoughtful, high-leverage questions.
+- Prioritize questions that reduce ambiguity or significantly shape implementation decisions.
+- Wait for user to answer them before proceeding.
+
+## Step 3: Plan the Full Implementation
+- Break the implementation into **phases and steps** like a software PM would.
+- Use the [Phase 1, Step 1…] format for clarity.
+- Include:
+  - Changes to Supabase schema or logic
+  - New components to be built in React Native
+  - API or LLM integration logic (if relevant)
+  - Any new constants, hooks, state, or utility logic
+
+## Step 4: Ask for Approval
+- Once the plan is drafted, clearly ask:
+  > "Is this plan approved?"
+- Do nothing until the user explicitly approves.
+
+## Step 5: Implement the Approved Plan
+- Execute each phase one step at a time.
+- After each step, report back:
+  - ✅ What was completed
+  - ▶️ What the next step is
+  - 📊 How many steps remain in the current phase
+- Wait for confirmation if the user wants to pause or adjust anything.
+
+## Step 6: Completion
+- After the final step, summarize:
+  - 🧱 What was built
+  - 🔄 What changed across frontend/backend
+  - ✅ That the plan was fully implemented

@@ -135,15 +135,26 @@
          console.log("Sending request to OpenAI API...");
          
          // Log the exact request we're sending
+          
          const messages = [
-           {
-             role: "system",
-             content: "You are a literary analysis assistant. When asked to extract concepts, provide them as a simple comma-separated list without numbering, explanation, or formatting."
-           },
-           {
-             role: "user",
-             content: `Extract 10 key concepts or themes from the book "${bookName}". Return ONLY the concepts as a plain comma-separated list without numbering, bullets, or any additional text.`
-           }
+            {
+              role: "system",
+              content: `You are an expert in educational content design. Your task is to break down non-fiction books into specific, teachable concepts. Extract named principles, methods, frameworks, and key ideas that could each be taught as a standalone lesson. Identify precise terminology from the book, not vague categories.`
+            },
+            {
+              role: "user",
+              content: `Extract ALL specific learning concepts from the book "${bookName}".
+
+Follow these guidelines:
+1. Identify precise named principles, theories, methods, models, and key ideas
+2. Use the actual terminology from the book 
+3. Combine related ideas into meaningful concept pairs when appropriate
+4. Be specific enough that each concept could be the title of a focused lesson
+5. Avoid overly broad categories 
+6. Be comprehensive - include ALL teachable concepts from the book
+
+Format the output as a numbered list with ONLY the concept names. Do not include descriptions, explanations, or any other text besides the numbered concepts.`
+            }
          ];
          console.log("Request messages:", JSON.stringify(messages, null, 2));
          
@@ -158,7 +169,7 @@
              "Authorization": `Bearer ${process.env.OPENAI_API_KEY.trim()}`
            };
            const body = {
-             model: "gpt-3.5-turbo",
+             model: "gpt-4o-mini",
              messages: [
                {
                  role: "system",
@@ -170,7 +181,7 @@
                }
              ],
              temperature: 0.7,
-             max_tokens: 300
+             max_tokens: 1000
            };
            
            console.log("Sending request to URL:", url);
@@ -201,10 +212,10 @@
            console.log("\n==== SDK APPROACH ====");
            console.log("Sending request to OpenAI API via SDK...");
            const completion = await openai.chat.completions.create({
-             model: "gpt-3.5-turbo",
+             model: "gpt-4o-mini",
              messages: messages,
              temperature: 0.7,
-             max_tokens: 300,
+             max_tokens: 1000,
            });
            
            console.log("Received response from OpenAI API");
@@ -251,7 +262,7 @@
              
              if (concepts.length > 0) {
                return res.json({ 
-                 concepts: concepts.slice(0, 10), 
+                 concepts: concepts, 
                  source: 'openai' 
                });
              } else {

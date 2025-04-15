@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Concepts API Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+        }
+        input, button {
+            padding: 8px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .concept {
+            background-color: #e7f3fe;
+            border-left: 6px solid #2196F3;
+            margin: 5px 0;
+            padding: 10px;
+        }
+        .debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Book Concepts API Tester</h1>
+    
+    <div>
+        <label for="bookName">Enter Book Title:</label><br>
+        <input type="text" id="bookName" placeholder="e.g., 1984" value="Brief History of Intelligence">
+        <button onclick="extractConcepts()">Extract Concepts</button>
+    </div>
+    
+    <div id="result">
+        <p>Results will appear here...</p>
+    </div>
+    
+    <div id="debug" class="debug-info" style="display:none">
+        <h3>Debug Information</h3>
+        <pre id="debug-content"></pre>
+    </div>
+
+    <script>
+        async function extractConcepts() {
+            const bookName = document.getElementById('bookName').value;
+            const resultDiv = document.getElementById('result');
+            const debugDiv = document.getElementById('debug');
+            const debugContent = document.getElementById('debug-content');
+            
+            if (!bookName) {
+                resultDiv.innerHTML = '<p style="color: red;">Please enter a book title</p>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                console.log('Sending request for book:', bookName);
+                const response = await fetch('http://localhost:3000/extract-concepts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ bookName })
+                });
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                // Show debug info
+                debugDiv.style.display = 'block';
+                debugContent.textContent = JSON.stringify(data, null, 2);
+                
+                if (data.error) {
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                    if (data.details) {
+                        resultDiv.innerHTML += `<p style="color: red;">Details: ${data.details}</p>`;
+                    }
+                } else {
+                    let conceptsHtml = '<h2>Concepts from "' + bookName + '":</h2>';
+                    
+                    if (data.concepts && data.concepts.length > 0) {
+                        conceptsHtml += `<p><em>Source: ${data.source || 'unknown'}</em></p>`;
+                        data.concepts.forEach(concept => {
+                            conceptsHtml += `<div class="concept">${concept}</div>`;
+                        });
+                    } else {
+                        conceptsHtml += `<p>No concepts found. Source: ${data.source || 'unknown'}</p>`;
+                        conceptsHtml += `<p>Trying fallback to default book concepts...</p>`;
+                        
+                        // Try with a known book as fallback
+                        const fallbackBooks = ['1984', 'Thinking, Fast and Slow', 'The Great Gatsby'];
+                        conceptsHtml += `<p>You can try with these books: ${fallbackBooks.join(', ')}</p>`;
+                    }
+                    
+                    resultDiv.innerHTML = conceptsHtml;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+                resultDiv.innerHTML += `<p>Check if the server is running at http://localhost:3000</p>`;
+            }
+        }
+    </script>
+</body>
+</html> 

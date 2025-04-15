@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Concepts API Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+        }
+        input, button {
+            padding: 8px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .concept {
+            background-color: #e7f3fe;
+            border-left: 6px solid #2196F3;
+            margin: 5px 0;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Book Concepts API Tester</h1>
+    
+    <div>
+        <label for="bookName">Enter Book Title:</label><br>
+        <input type="text" id="bookName" placeholder="e.g., 1984" value="1984">
+        <button onclick="extractConcepts()">Extract Concepts</button>
+    </div>
+    
+    <div id="result">
+        <p>Results will appear here...</p>
+    </div>
+
+    <script>
+        async function extractConcepts() {
+            const bookName = document.getElementById('bookName').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!bookName) {
+                resultDiv.innerHTML = '<p style="color: red;">Please enter a book title</p>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                console.log('Sending request for book:', bookName);
+                // Change to your actual IP if needed
+                const apiUrl = 'http://localhost:3000';
+                console.log('Using API URL:', apiUrl);
+                
+                const response = await fetch(`${apiUrl}/extract-concepts`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ bookName })
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.error) {
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                    if (data.details) {
+                        resultDiv.innerHTML += `<p style="color: red;">Details: ${data.details}</p>`;
+                    }
+                } else {
+                    let conceptsHtml = '<h2>Concepts from "' + bookName + '":</h2>';
+                    
+                    if (data.concepts && data.concepts.length > 0) {
+                        data.concepts.forEach(concept => {
+                            conceptsHtml += `<div class="concept">${concept}</div>`;
+                        });
+                    } else {
+                        conceptsHtml += '<p>No concepts found.</p>';
+                    }
+                    
+                    resultDiv.innerHTML = conceptsHtml;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html> 

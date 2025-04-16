@@ -310,6 +310,131 @@ Format the output as a numbered list with ONLY the concept names. Do not include
      }
    });
 
+   app.post('/assign-depth-targets', async (req, res) => {
+     console.log('\n==== NEW DEPTH TARGET REQUEST ====');
+     console.log('Request body:', req.body);
+     
+     const { bookName, concepts } = req.body;
+
+     if (!bookName || !concepts || !Array.isArray(concepts) || concepts.length === 0) {
+       console.log('Missing or invalid bookName or concepts in request');
+       return res.status(400).json({ error: 'Request must include bookName and an array of concepts' });
+     }
+
+     try {
+       console.log(`Assigning depth targets for book: "${bookName}" with ${concepts.length} concepts`);
+       
+       try {
+         // Initialize OpenAI
+         console.log("Creating OpenAI client with key prefix:", process.env.OPENAI_API_KEY.substring(0, 10) + "...");
+         const openai = new OpenAI({
+           apiKey: process.env.OPENAI_API_KEY.trim(),
+         });
+         
+         // Use OpenAI to assign depth targets
+         console.log("Sending depth target request to OpenAI API...");
+         
+         const messages = [
+           {
+             role: "system",
+             content: `You are an expert instructional designer.`
+           },
+           {
+             role: "user",
+             content: `For each of the following concepts from the book "${bookName}," assign a \`depth_target\` — a number between 1 and 6 — that reflects how deeply the user should understand the concept.
+
+Use this scale:
+
+1 = Recall → Just remember the definition  
+2 = Reframe → Explain it in your own words  
+3 = Apply → Use it in a real-world situation  
+4 = Contrast → Compare it with other ideas  
+5 = Critique → Evaluate its limitations or flaws  
+6 = Remix → Combine it with other models or frameworks to create something new
+
+Your job is to decide how far a learner should go to truly *digest* each concept — not just understand it, but internalize it.
+
+Return a clean JSON array like this:
+
+\`\`\`json
+[
+  { "concept": "Concept 1", "depth_target": 4 },
+  { "concept": "Concept 2", "depth_target": 3 },
+  ...
+]
+\`\`\`
+
+Here are the concepts:
+${concepts.map((concept, index) => `${index + 1}. ${concept}`).join('\n')}`
+           }
+         ];
+         
+         console.log("Depth target request messages:", JSON.stringify(messages, null, 2));
+         
+         try {
+           const completion = await openai.chat.completions.create({
+             model: "gpt-4o-mini",
+             messages: messages,
+             temperature: 0.7,
+             max_tokens: 1500,
+           });
+           
+           console.log("Received depth target response from OpenAI API");
+           
+           if (completion.choices && completion.choices.length > 0) {
+             const responseContent = completion.choices[0].message.content.trim();
+             console.log("Raw depth target response:", responseContent);
+             
+             try {
+               // Extract JSON array from the response
+               let jsonMatch = responseContent.match(/```json\s*([\s\S]*?)\s*```/);
+               
+               // If the response doesn't use the ```json format, try to parse the entire response
+               const jsonText = jsonMatch ? jsonMatch[1] : responseContent;
+               
+               const conceptsWithDepth = JSON.parse(jsonText);
+               console.log("Parsed concepts with depth targets:", conceptsWithDepth);
+               
+               if (Array.isArray(conceptsWithDepth) && conceptsWithDepth.length > 0) {
+                 return res.json({ 
+                   conceptsWithDepth: conceptsWithDepth, 
+                   source: 'openai' 
+                 });
+               } else {
+                 console.log("Invalid response format, using fallback");
+                 const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+                 return res.json({ conceptsWithDepth, source: 'parsing-failed-fallback' });
+               }
+             } catch (parseError) {
+               console.error("Error parsing JSON response:", parseError);
+               const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+               return res.json({ conceptsWithDepth, source: 'json-parse-error-fallback' });
+             }
+           } else {
+             console.log("No valid response, using fallback");
+             const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+             return res.json({ conceptsWithDepth, source: 'api-empty-response-fallback' });
+           }
+         } catch (callError) {
+           console.error("Error calling OpenAI API for depth targets:", callError);
+           const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+           return res.json({ conceptsWithDepth, source: `api-call-error-fallback: ${callError.message}` });
+         }
+       } catch (clientError) {
+         console.error("Error creating OpenAI client:", clientError.message);
+         const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+         return res.json({ conceptsWithDepth, source: 'client-error-fallback' });
+       }
+     } catch (error) {
+       console.error('Server error:', error.message);
+       const conceptsWithDepth = concepts.map(concept => ({ concept, depth_target: 3 }));
+       return res.json({ 
+         conceptsWithDepth,
+         source: 'error-handler-fallback'
+       });
+     }
+   });
+
    const PORT = process.env.PORT || 3000;
    app.listen(PORT, () => {
      console.log(`Server is running on port ${PORT}`);

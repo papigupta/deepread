@@ -126,7 +126,7 @@ export default function App() {
 
   const handlePracticePress = (concept, depth_target) => {
     console.log(`Practice pressed for ${concept} with depth ${depth_target}`);
-    setActivePracticeConcept({ concept, depth_target });
+    setActivePracticeConcept({ concept, depth_target, current_depth: 1 });
     setPracticeModalVisible(true);
   };
 
@@ -200,8 +200,23 @@ export default function App() {
               <PracticeQuestions
                 concept={activePracticeConcept.concept}
                 depth_target={activePracticeConcept.depth_target}
+                current_depth={activePracticeConcept.current_depth}
                 bookName={bookName}
                 onClose={closePracticeModal}
+                onLevelComplete={(concept, current_depth, final_depth) => {
+                  if (current_depth < final_depth) {
+                    // Move to the next level
+                    setActivePracticeConcept({
+                      concept,
+                      depth_target: final_depth,
+                      current_depth: current_depth + 1
+                    });
+                  } else {
+                    // User completed all levels
+                    closePracticeModal();
+                    Alert.alert('Congratulations!', `You've completed all depth levels for ${concept}!`);
+                  }
+                }}
               />
             )}
           </View>

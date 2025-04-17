@@ -5,7 +5,7 @@ const API_URL = Platform.OS === 'android'
   ? 'http://10.0.2.2:3000' 
   : 'http://192.168.1.4:3000';
 
-const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
+const PracticeQuestions = ({ concept, depth_target, current_depth, bookName, onClose, onLevelComplete }) => {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [loading, setLoading] = useState(true);
@@ -13,14 +13,14 @@ const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
 
   useEffect(() => {
     fetchQuestions();
-  }, [concept, depth_target]);
+  }, [concept, current_depth]);
 
   const fetchQuestions = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      console.log(`Fetching questions for concept: ${concept}, depth_target: ${depth_target}`);
+      console.log(`Fetching questions for concept: ${concept}, current depth: ${current_depth} (of target: ${depth_target})`);
       
       const response = await fetch(`${API_URL}/generate-questions`, {
         method: 'POST',
@@ -29,7 +29,7 @@ const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
         },
         body: JSON.stringify({
           concept,
-          depth_target,
+          depth_target: current_depth, // Use current_depth instead of final depth_target
           book_title: bookName,
           related_concepts: [],  // Could be dynamically populated in the future
           mental_models_pool: []  // Could be dynamically populated in the future
@@ -73,16 +73,35 @@ const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
   };
 
   const handleSubmit = () => {
-    // Here you would typically save the answers to a database
+    // Here you would typically validate the answers
+    // For now, we'll consider all answers acceptable to progress
     console.log('Submitting answers:', {
       concept,
-      depth_target,
+      current_depth,
       answers,
       timestamp: new Date().toISOString()
     });
     
-    // For now, just close the practice modal
-    onClose();
+    // Notify about level completion and progress to next level
+    if (onLevelComplete) {
+      onLevelComplete(concept, current_depth, depth_target);
+    } else {
+      // Fallback if the callback is not provided
+      onClose();
+    }
+  };
+
+  // Get depth level name for display
+  const getDepthName = (level) => {
+    const depthNames = {
+      1: "Recall",
+      2: "Reframe",
+      3: "Apply",
+      4: "Contrast",
+      5: "Critique",
+      6: "Remix"
+    };
+    return depthNames[level] || `Level ${level}`;
   };
 
   if (loading) {
@@ -108,7 +127,23 @@ const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Practice: {concept}</Text>
-      <Text style={styles.subtitle}>Depth Level: {depth_target}</Text>
+      <View style={styles.progressContainer}>
+        <Text style={styles.subtitle}>
+          Level {current_depth} of {depth_target}: {getDepthName(current_depth)}
+        </Text>
+        <View style={styles.progressBar}>
+          {Array.from({ length: depth_target }, (_, i) => (
+            <View 
+              key={i} 
+              style={[
+                styles.progressStep, 
+                i < current_depth ? styles.progressCompleted : null,
+                i === current_depth - 1 ? styles.progressCurrent : null
+              ]} 
+            />
+          ))}
+        </View>
+      </View>
       
       {questions.map((question, index) => (
         <View key={index} style={styles.questionContainer}>
@@ -125,7 +160,9 @@ const PracticeQuestions = ({ concept, depth_target, bookName, onClose }) => {
       
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-          <Text style={styles.buttonText}>Submit</Text>
+          <Text style={styles.buttonText}>
+            {current_depth < depth_target ? "Continue to Next Level" : "Complete Practice"}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onClose}>
           <Text style={styles.buttonText}>Cancel</Text>
@@ -153,8 +190,29 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    marginBottom: 20,
+    marginBottom: 5,
     color: '#666',
+  },
+  progressContainer: {
+    marginBottom: 20,
+  },
+  progressBar: {
+    flexDirection: 'row',
+    height: 10,
+    marginTop: 10,
+  },
+  progressStep: {
+    flex: 1,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ddd',
+    marginHorizontal: 2,
+  },
+  progressCompleted: {
+    backgroundColor: '#26C6DA',
+  },
+  progressCurrent: {
+    backgroundColor: '#00BCD4',
   },
   questionContainer: {
     marginBottom: 20,

@@ -182,7 +182,7 @@
                             <span>${item.depth_target}</span>
                         </div>
                     </div>
-                    <button onclick="practiceQuestions('${item.concept.replace(/'/g, "\\'")}', ${item.depth_target}, '${document.getElementById('bookInput').value.replace(/'/g, "\\'")}')">Practice</button>
+                    <button onclick="practiceQuestions('${item.concept.replace(/'/g, "\\'")}', ${item.depth_target}, '${document.getElementById('bookInput').value.replace(/'/g, "\\'")}', 1)">Practice</button>
                 `;
                 container.appendChild(div);
             });
@@ -202,21 +202,37 @@
             displayConceptsWithDepth(conceptsWithDepth);
         }
 
-        async function practiceQuestions(concept, depth_target, bookName) {
+        // Initialize practice state variable to track progress
+        let practiceState = {
+            concept: '',
+            current_depth: 1,
+            final_depth_target: 1,
+            bookName: ''
+        };
+
+        async function practiceQuestions(concept, depth_target, bookName, current_depth = 1) {
+            // Set the practice state
+            practiceState = {
+                concept,
+                current_depth: current_depth || 1,
+                final_depth_target: depth_target,
+                bookName
+            };
+
             document.getElementById('practiceStatus').textContent = 'Loading questions...';
             document.getElementById('questionsContainer').innerHTML = '';
             
             // Show loading spinner
             document.getElementById('loadingSpinner').style.display = 'flex';
-            document.getElementById('loadingText').textContent = 'Generating questions...';
+            document.getElementById('loadingText').textContent = `Generating level ${practiceState.current_depth} questions...`;
             
             try {
-                console.log(`Generating questions for: ${concept}, depth: ${depth_target}, book: ${bookName}`);
+                console.log(`Generating questions for: ${concept}, depth: ${practiceState.current_depth} (of target: ${depth_target}), book: ${bookName}`);
                 
                 // Log the full request details for debugging
                 const requestBody = { 
                     concept, 
-                    depth_target: parseInt(depth_target), 
+                    depth_target: parseInt(practiceState.current_depth), // Use current_depth instead of final depth_target
                     book_title: bookName 
                 };
                 console.log('Request body:', JSON.stringify(requestBody));
@@ -252,7 +268,7 @@
                     throw new Error('Server returned invalid data format');
                 }
                 
-                displayQuestions(data.questions, concept, depth_target);
+                displayQuestions(data.questions, concept, practiceState.current_depth, practiceState.final_depth_target);
                 document.getElementById('practiceStatus').textContent = '';
             } catch (error) {
                 console.error('Error generating questions:', error);
@@ -263,7 +279,7 @@
                         <p>${error.message}</p>
                         <p>Please make sure the backend server is running at http://localhost:3000</p>
                         <div>
-                            <button onclick="practiceQuestionsFallback('${concept.replace(/'/g, "\\'")}', ${depth_target}, '${bookName.replace(/'/g, "\\'")}')">
+                            <button onclick="practiceQuestionsFallback('${concept.replace(/'/g, "\\'")}', ${practiceState.current_depth}, '${bookName.replace(/'/g, "\\'")}')" class="retry-btn">
                                 Try with fallback questions
                             </button>
                         </div>
@@ -276,11 +292,11 @@
         }
 
         // Add a fallback function for when the server is not available
-        function practiceQuestionsFallback(concept, depth_target, bookName) {
+        function practiceQuestionsFallback(concept, current_depth, bookName) {
             document.getElementById('practiceStatus').textContent = 'Using fallback questions...';
             document.getElementById('questionsContainer').innerHTML = '';
             
-            console.log(`Generating fallback questions for: ${concept}, depth: ${depth_target}, book: ${bookName}`);
+            console.log(`Generating fallback questions for: ${concept}, current depth: ${current_depth} (of target: ${practiceState.final_depth_target}), book: ${bookName}`);
             
             const levelQuestions = {
                 1: [ // Recall
@@ -315,12 +331,12 @@
                 ]
             };
             
-            const questions = levelQuestions[depth_target] || levelQuestions[3];
-            displayQuestions(questions, concept, depth_target);
+            const questions = levelQuestions[current_depth] || levelQuestions[3];
+            displayQuestions(questions, concept, current_depth, practiceState.final_depth_target);
             document.getElementById('practiceStatus').textContent = 'Using fallback questions (server not available)';
         }
 
-        function displayQuestions(questions, concept, depth_target) {
+        function displayQuestions(questions, concept, current_depth, final_depth_target) {
             const depthNames = {
                 1: "Recall",
                 2: "Reframe",
@@ -333,7 +349,14 @@
             const container = document.getElementById('questionsContainer');
             container.innerHTML = `
                 <h3>Practice Questions for: ${concept}</h3>
-                <p class="depth-info">Depth Level ${depth_target}: ${depthNames[depth_target]}</p>
+                <div class="progress-container">
+                    <p class="depth-info">Level ${current_depth} of ${final_depth_target}: ${depthNames[current_depth]}</p>
+                    <div class="progress-bar">
+                        ${Array.from({ length: final_depth_target }, (_, i) => 
+                            `<div class="progress-step ${i < current_depth ? 'completed' : ''} ${i === current_depth - 1 ? 'current' : ''}"></div>`
+                        ).join('')}
+                    </div>
+                </div>
             `;
             
             questions.forEach((question, index) => {
@@ -347,11 +370,19 @@
             });
             
             const button = document.createElement('button');
-            button.textContent = 'Submit Answers';
+            button.textContent = current_depth < final_depth_target ? 'Continue to Next Level' : 'Complete Practice';
             button.className = 'submit-btn';
             button.onclick = () => {
-                alert('Answers submitted (demo)');
                 // Here you would normally save the answers to a database
+                if (current_depth < final_depth_target) {
+                    // Move to the next level
+                    practiceQuestions(concept, final_depth_target, practiceState.bookName, current_depth + 1);
+                } else {
+                    // User completed all levels
+                    alert(`Congratulations! You've completed all depth levels for ${concept}!`);
+                    document.getElementById('questionsContainer').innerHTML = '';
+                    document.getElementById('practiceStatus').textContent = 'Practice completed!';
+                }
             };
             container.appendChild(button);
         }
@@ -397,14 +428,51 @@
             transition: background 0.2s;
         }
         button:hover {
-            background: #004d99;
+            background: #0055b3;
+        }
+        .submit-btn {
+            background-color: #34c759;
+            margin-top: 20px;
+            width: 100%;
+            padding: 12px;
+            font-size: 18px;
+        }
+        .submit-btn:hover {
+            background-color: #2ea44f;
+        }
+        .retry-btn {
+            background-color: #ff9500;
+        }
+        .retry-btn:hover {
+            background-color: #e68600;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .section {
+            margin-bottom: 30px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .book-input {
+            display: flex;
+            gap: 10px;
+        }
+        .book-input input {
+            flex: 1;
+        }
+        .concepts-list {
+            margin-top: 20px;
         }
         .concept {
+            background-color: white;
             padding: 15px;
-            margin: 10px 0;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.05);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -412,33 +480,28 @@
         .concept-info {
             display: flex;
             align-items: center;
-            flex: 1;
+            gap: 10px;
         }
         .concept-text {
+            margin: 0;
             font-weight: 500;
-            margin: 0 15px 0 0;
-            flex: 1;
-        }
-        .depth-select {
-            width: 150px;
         }
         .depth-badge {
             width: 30px;
             height: 30px;
-            border-radius: 15px;
+            border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
-            margin-left: 10px;
-            color: #333;
             font-weight: bold;
+            color: #333;
         }
         .question {
-            padding: 20px;
-            margin: 15px 0;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            background-color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.05);
         }
         .question-text {
             font-weight: 500;
@@ -446,88 +509,112 @@
         }
         textarea {
             width: 100%;
-            min-height: 100px;
             resize: vertical;
-            box-sizing: border-box;
+        }
+        #questionsContainer {
+            margin-top: 30px;
+        }
+        .loading-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        .loading-text {
+            color: white;
+            margin-left: 20px;
+            font-size: 18px;
         }
         .depth-info {
-            color: #666;
-            font-style: italic;
-            margin-top: 0;
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 5px;
         }
-        #status, #practiceStatus {
-            margin: 10px 0;
-            font-weight: 500;
+        .progress-container {
+            margin-bottom: 20px;
         }
-        .submit-btn {
-            margin-top: 15px;
-            background: #34c759;
-        }
-        .submit-btn:hover {
-            background: #28a745;
-        }
-        .book-input-container {
+        .progress-bar {
             display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
+            gap: 4px;
+            margin-top: 10px;
+            height: 10px;
         }
-        #bookInput {
+        .progress-step {
             flex: 1;
+            height: 10px;
+            background-color: #e0e0e0;
+            border-radius: 5px;
         }
-        @media (max-width: 768px) {
-            .concept-info {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            .depth-select {
-                margin-top: 10px;
-            }
+        .progress-step.completed {
+            background-color: #26C6DA;
         }
-        .loading-spinner-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin: 20px 0;
-        }
-        .loading-spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #0066cc;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 10px;
+        .progress-step.current {
+            background-color: #00BCD4;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .concept {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .concept button {
+                margin-top: 10px;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>Deepread Prompt Generation Test</h1>
-    <div>
-        <button onclick="testAPI()">Test API Connection</button>
-        <div id="result"></div>
-    </div>
-    <hr>
-    <div>
-        <h2>Enter Book Name</h2>
-        <div class="book-input-container">
-            <input id="bookInput" type="text" placeholder="e.g., Thinking, Fast and Slow">
-            <button onclick="submitBook()">Submit</button>
-        </div>
-        <div id="status"></div>
+    <div class="container">
+        <h1>Deepread Prompt Generation Test</h1>
+        <p>This is a test interface for the prompt generation API. Enter a book title below to extract concepts and generate practice questions.</p>
         
-        <!-- Add loading spinner -->
-        <div id="loadingSpinner" class="loading-spinner-container" style="display: none;">
-            <div class="loading-spinner"></div>
-            <p id="loadingText">Loading...</p>
+        <div class="section">
+            <h2>Step 1: Enter a Book Title</h2>
+            <div class="book-input">
+                <input type="text" id="bookInput" placeholder="Enter book title..." value="Thinking, Fast and Slow">
+                <button onclick="submitBook()">Get Concepts</button>
+            </div>
+            <div id="status"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Step 2: Practice with Concepts</h2>
+            <div id="conceptsContainer"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Step 3: Answer Questions</h2>
+            <div id="practiceStatus"></div>
+            <div id="questionsContainer"></div>
         </div>
     </div>
-    <div id="conceptsContainer"></div>
-    <hr>
-    <div id="practiceStatus"></div>
-    <div id="questionsContainer"></div>
+    
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="loading-container">
+        <div class="spinner"></div>
+        <div id="loadingText" class="loading-text">Loading...</div>
+    </div>
 </body>
 </html> 

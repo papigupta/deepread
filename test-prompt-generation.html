@@ -357,23 +357,36 @@
                         ).join('')}
                     </div>
                 </div>
+                <div id="evaluationResults" class="evaluation-results" style="display: none;"></div>
             `;
             
             questions.forEach((question, index) => {
                 const div = document.createElement('div');
                 div.className = 'question';
+                div.id = `question-${index}`;
                 div.innerHTML = `
                     <p class="question-text">${question}</p>
-                    <textarea rows="4" placeholder="Your answer..."></textarea>
+                    <textarea id="answer-${index}" rows="4" placeholder="Your answer..."></textarea>
+                    <div id="feedback-${index}" class="feedback-container" style="display: none;"></div>
                 `;
                 container.appendChild(div);
             });
             
-            const button = document.createElement('button');
-            button.textContent = current_depth < final_depth_target ? 'Continue to Next Level' : 'Complete Practice';
-            button.className = 'submit-btn';
-            button.onclick = () => {
-                // Here you would normally save the answers to a database
+            // Create Submit Answers button
+            const submitButton = document.createElement('button');
+            submitButton.textContent = 'Submit Answers';
+            submitButton.className = 'submit-btn';
+            submitButton.id = 'submitAnswersBtn';
+            submitButton.onclick = () => submitAnswersForEvaluation(questions, concept, current_depth);
+            container.appendChild(submitButton);
+            
+            // Create Continue button (initially hidden)
+            const continueButton = document.createElement('button');
+            continueButton.textContent = current_depth < final_depth_target ? 'Continue to Next Level' : 'Complete Practice';
+            continueButton.className = 'submit-btn continue-btn';
+            continueButton.id = 'continueBtn';
+            continueButton.style.display = 'none';
+            continueButton.onclick = () => {
                 if (current_depth < final_depth_target) {
                     // Move to the next level
                     practiceQuestions(concept, final_depth_target, practiceState.bookName, current_depth + 1);
@@ -384,7 +397,209 @@
                     document.getElementById('practiceStatus').textContent = 'Practice completed!';
                 }
             };
-            container.appendChild(button);
+            container.appendChild(continueButton);
+        }
+
+        // Function to submit answers for evaluation
+        async function submitAnswersForEvaluation(questions, concept, current_depth) {
+            // Validate that all questions have been answered
+            const answers = [];
+            let allAnswered = true;
+            
+            for (let i = 0; i < questions.length; i++) {
+                const answerText = document.getElementById(`answer-${i}`).value.trim();
+                answers.push(answerText);
+                
+                if (!answerText) {
+                    allAnswered = false;
+                }
+            }
+            
+            if (!allAnswered) {
+                alert('Please answer all questions before submitting.');
+                return;
+            }
+            
+            // Disable the submit button and textareas during evaluation
+            document.getElementById('submitAnswersBtn').disabled = true;
+            document.getElementById('submitAnswersBtn').textContent = 'Evaluating...';
+            
+            for (let i = 0; i < questions.length; i++) {
+                document.getElementById(`answer-${i}`).disabled = true;
+            }
+            
+            // Show loading message
+            document.getElementById('loadingSpinner').style.display = 'flex';
+            document.getElementById('loadingText').textContent = 'Evaluating your answers...';
+            
+            try {
+                // Evaluate each answer
+                const evaluationResults = {};
+                let allPassed = true;
+                
+                for (let i = 0; i < questions.length; i++) {
+                    const answerText = answers[i];
+                    const question = questions[i];
+                    
+                    try {
+                        // Call the evaluation API
+                        const response = await fetch('http://localhost:3000/evaluate-insight', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                userResponse: answerText,
+                                originalInsight: `${concept}: ${question}`,
+                                depthTarget: current_depth
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`Evaluation failed: ${response.status}`);
+                        }
+                        
+                        const result = await response.json();
+                        console.log(`Evaluation result for question ${i}:`, result);
+                        
+                        evaluationResults[i] = result;
+                        
+                        // Check if the score meets the minimum threshold (3.0)
+                        if (result.simplified_score < 3.0) {
+                            allPassed = false;
+                        }
+                        
+                    } catch (error) {
+                        console.error(`Error evaluating answer ${i}:`, error);
+                        evaluationResults[i] = { 
+                            error: error.message,
+                            eval_score: 0,
+                            simplified_score: 0,
+                            explanation: "Error evaluating answer."
+                        };
+                        allPassed = false;
+                    }
+                }
+                
+                // Display evaluation results
+                displayEvaluationResults(evaluationResults, allPassed);
+                
+            } catch (error) {
+                console.error('Evaluation error:', error);
+                alert(`Evaluation failed: ${error.message}`);
+                
+                // Re-enable the submit button and textareas
+                document.getElementById('submitAnswersBtn').disabled = false;
+                document.getElementById('submitAnswersBtn').textContent = 'Submit Answers';
+                
+                for (let i = 0; i < questions.length; i++) {
+                    document.getElementById(`answer-${i}`).disabled = false;
+                }
+            } finally {
+                document.getElementById('loadingSpinner').style.display = 'none';
+            }
+        }
+
+        // Function to display evaluation results
+        function displayEvaluationResults(evaluationResults, allPassed) {
+            // Show overall message
+            const evaluationContainer = document.getElementById('evaluationResults');
+            evaluationContainer.style.display = 'block';
+            
+            evaluationContainer.innerHTML = `
+                <div class="overall-result ${allPassed ? 'passed' : 'failed'}">
+                    <h3>${allPassed ? 'Great job!' : 'Keep practicing'}</h3>
+                    <p>${allPassed 
+                        ? 'You can now advance to the next level.' 
+                        : 'Review the feedback below and improve your answers to advance.'}
+                    </p>
+                </div>
+            `;
+            
+            // Display individual feedback for each answer
+            for (let i = 0; i < Object.keys(evaluationResults).length; i++) {
+                const result = evaluationResults[i];
+                const feedbackContainer = document.getElementById(`feedback-${i}`);
+                feedbackContainer.style.display = 'block';
+                
+                if (result.error) {
+                    feedbackContainer.innerHTML = `
+                        <div class="error-message">
+                            <p>Evaluation error: ${result.error}</p>
+                        </div>
+                    `;
+                    continue;
+                }
+                
+                const scoreColor = getScoreColor(result.simplified_score);
+                
+                let factorsHtml = '';
+                if (result.factors) {
+                    factorsHtml = `
+                        <div class="factors-container">
+                            <h4>Evaluation Factors:</h4>
+                            <div class="factors-grid">
+                                ${Object.entries(result.factors).map(([factor, score]) => `
+                                    <div class="factor-item">
+                                        <span class="factor-name">${factor}:</span>
+                                        <span class="factor-score">${score}/10</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                feedbackContainer.innerHTML = `
+                    <div class="feedback-content">
+                        <div class="score-container">
+                            <span class="score-label">Score:</span>
+                            <span class="score-value" style="color: ${scoreColor}">
+                                ${result.simplified_score.toFixed(1)}/5
+                            </span>
+                        </div>
+                        <p class="explanation">${result.explanation}</p>
+                        ${factorsHtml}
+                    </div>
+                `;
+            }
+            
+            // Show/hide appropriate buttons
+            document.getElementById('submitAnswersBtn').style.display = 'none';
+            document.getElementById('continueBtn').style.display = 'block';
+            
+            // If not all answers passed, disable the continue button
+            if (!allPassed) {
+                document.getElementById('continueBtn').textContent = 'Revise Answers';
+                document.getElementById('continueBtn').onclick = () => resetEvaluation();
+            }
+        }
+
+        // Function to reset evaluation state to try again
+        function resetEvaluation() {
+            // Re-enable textareas
+            const questionCount = document.querySelectorAll('.question').length;
+            for (let i = 0; i < questionCount; i++) {
+                document.getElementById(`answer-${i}`).disabled = false;
+                document.getElementById(`feedback-${i}`).style.display = 'none';
+            }
+            
+            // Reset buttons
+            document.getElementById('submitAnswersBtn').style.display = 'block';
+            document.getElementById('submitAnswersBtn').disabled = false;
+            document.getElementById('submitAnswersBtn').textContent = 'Submit Answers';
+            
+            document.getElementById('continueBtn').style.display = 'none';
+            
+            // Hide evaluation results
+            document.getElementById('evaluationResults').style.display = 'none';
+        }
+
+        // Helper function to get color based on score
+        function getScoreColor(score) {
+            if (score >= 4) return '#4CAF50'; // Good - Green
+            if (score >= 3) return '#FFC107'; // Acceptable - Yellow
+            return '#F44336'; // Needs improvement - Red
         }
     </script>
     <style>
@@ -582,6 +797,94 @@
                 margin-top: 10px;
                 width: 100%;
             }
+        }
+        .evaluation-results {
+            background-color: #f9f9f9;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        .overall-result {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .overall-result.passed {
+            background-color: #E8F5E9;
+            border: 1px solid #A5D6A7;
+        }
+        .overall-result.failed {
+            background-color: #FFF8E1;
+            border: 1px solid #FFE082;
+        }
+        .feedback-container {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f0f8ff;
+            border-radius: 5px;
+            border: 1px solid #e1e4e8;
+        }
+        .feedback-content {
+            padding: 5px;
+        }
+        .score-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .score-label {
+            font-weight: 600;
+            margin-right: 5px;
+        }
+        .score-value {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .explanation {
+            margin-bottom: 10px;
+            font-style: italic;
+        }
+        .factors-container {
+            margin-top: 10px;
+            border-top: 1px solid #e1e4e8;
+            padding-top: 10px;
+        }
+        .factors-container h4 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #555;
+        }
+        .factors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 8px;
+        }
+        .factor-item {
+            display: flex;
+            justify-content: space-between;
+            background-color: #f5f5f5;
+            padding: 5px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .factor-name {
+            text-transform: capitalize;
+            color: #333;
+        }
+        .factor-score {
+            font-weight: 600;
+        }
+        .error-message {
+            color: #D32F2F;
+            background-color: #FFEBEE;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .continue-btn {
+            margin-top: 10px;
         }
     </style>
 </head>

@@ -203,12 +203,24 @@ export default function App() {
                 current_depth={activePracticeConcept.current_depth}
                 bookName={bookName}
                 onClose={closePracticeModal}
-                onLevelComplete={(concept, current_depth, final_depth) => {
+                onLevelComplete={(concept, current_depth, final_depth, evaluationResults) => {
+                  console.log('Level completed:', {
+                    concept,
+                    current_depth,
+                    final_depth,
+                    evaluationResults
+                  });
+                  
+                  // TODO: Store evaluation results in database
+                  // This would typically make an API call to your backend to:
+                  // 1. Save the evaluation scores for this practice session
+                  // 2. Update the book's aggregate scores based on this session
+                  
                   if (current_depth < final_depth) {
                     // Move to the next level
                     setActivePracticeConcept({
                       concept,
-                      depth_target: final_depth,
+                      depth_target: final_depth, 
                       current_depth: current_depth + 1
                     });
                   } else {

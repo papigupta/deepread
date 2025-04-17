@@ -564,6 +564,224 @@ Return ONLY a JSON object with this structure:
      }
    });
 
+   // Add a new endpoint for evaluating user responses
+   app.post('/evaluate-insight', async (req, res) => {
+     try {
+       console.log('\n==== NEW EVALUATION REQUEST ====');
+       const { userResponse, originalInsight, depthTarget } = req.body;
+       
+       // Validate inputs
+       if (!userResponse || !originalInsight || !depthTarget) {
+         return res.status(400).json({ 
+           error: 'Missing required parameters',
+           required: ['userResponse', 'originalInsight', 'depthTarget']
+         });
+       }
+
+       console.log(`Evaluating response for depth target: ${depthTarget}`);
+       console.log(`Original insight: ${originalInsight.substring(0, 50)}...`);
+       console.log(`User response: ${userResponse.substring(0, 50)}...`);
+
+       // Define the supabase URL and API key
+       const supabaseUrl = process.env.SUPABASE_URL;
+       const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+       
+       // Check if Supabase credentials are available
+       if (supabaseUrl && supabaseKey) {
+         try {
+           // Call the Supabase Edge Function
+           const response = await fetch(`${supabaseUrl}/functions/v1/evaluate_insight`, {
+             method: 'POST',
+             headers: {
+               'Content-Type': 'application/json',
+               'Authorization': `Bearer ${supabaseKey}`
+             },
+             body: JSON.stringify({
+               userResponse,
+               originalInsight,
+               depthTarget
+             })
+           });
+
+           if (!response.ok) {
+             const errorText = await response.text();
+             console.error(`Supabase function error: ${response.status} - ${errorText}`);
+             // Fall through to OpenAI direct approach
+           } else {
+             const evaluationResult = await response.json();
+             console.log('Evaluation result from Supabase:', JSON.stringify(evaluationResult, null, 2));
+             return res.json(evaluationResult);
+           }
+         } catch (error) {
+           console.error('Error calling Supabase function:', error);
+           // Fall through to OpenAI direct approach
+         }
+       } else {
+         console.log('Supabase credentials not found, using direct OpenAI evaluation');
+       }
+
+       // FALLBACK: Directly use OpenAI for evaluation if Supabase is not configured or fails
+       console.log('Using direct OpenAI evaluation...');
+       
+       // Helper function to determine factors and weights
+       function getFactorsForDepth(depthTarget) {
+         const factors = {
+           1: { // Recall
+             accuracy: 0.40,
+             understanding: 0.30,
+             clarity: 0.20,
+             relevance: 0.10
+           },
+           2: { // Reframe
+             understanding: 0.30,
+             clarity: 0.30,
+             accuracy: 0.20,
+             relevance: 0.20
+           },
+           3: { // Apply
+             context_fit: 0.35,
+             relevance: 0.20,
+             understanding: 0.20,
+             clarity: 0.15,
+             depth: 0.10
+           },
+           4: { // Contrast
+             understanding: 0.25,
+             depth: 0.25,
+             relevance: 0.20,
+             clarity: 0.15,
+             accuracy: 0.15
+           },
+           5: { // Critique
+             depth: 0.30,
+             understanding: 0.25,
+             clarity: 0.20,
+             context_fit: 0.15,
+             relevance: 0.10
+           },
+           6: { // Remix
+             creativity: 0.30,
+             depth: 0.25,
+             understanding: 0.20,
+             context_fit: 0.15,
+             clarity: 0.10
+           }
+         };
+         
+         return factors[depthTarget] || factors[2]; // Default to Reframe if invalid depth
+       }
+       
+       // Get the depth name for display
+       function getDepthName(depthTarget) {
+         const depthNames = {
+           1: "Recall",
+           2: "Reframe",
+           3: "Apply",
+           4: "Contrast",
+           5: "Critique",
+           6: "Remix"
+         };
+         return depthNames[depthTarget] || `Level ${depthTarget}`;
+       }
+       
+       try {
+         // Get the factors and weights for this depth
+         const factors = getFactorsForDepth(depthTarget);
+         const factorNames = Object.keys(factors).join(", ");
+         const depthName = getDepthName(depthTarget);
+         
+         // Create the system prompt
+         const systemPrompt = `You are an evaluation assistant for learning responses.
+         
+You are evaluating a user's answer to a prompt at cognitive depth level ${depthTarget} (${depthName}).
+
+For this depth level, evaluate ONLY these factors: ${factorNames}.
+
+Score each factor on a scale of 0-10:
+${Object.entries(factors).map(([name, weight]) => `- ${name}: Score out of 10`).join('\n')}
+
+Apply these weights to calculate the final score:
+${Object.entries(factors).map(([name, weight]) => `- ${name}: ${weight * 100}%`).join('\n')}
+
+Return:
+1. Scores for each factor (0-10)
+2. A weighted eval_score (0-1)
+3. A brief explanation (under 280 characters) focusing on strengths/weaknesses
+
+Format your response as valid JSON:
+{
+  "factors": {
+    ${Object.keys(factors).map(name => `"${name}": Number`).join(',\n    ')}
+  },
+  "eval_score": Number, // Normalized 0-1
+  "simplified_score": Number, // 0-5 scale
+  "explanation": "String" // Under 280 chars
+}`;
+
+         // Initialize OpenAI
+         const openai = new OpenAI({
+           apiKey: process.env.OPENAI_API_KEY.trim(),
+         });
+         
+         // Call OpenAI API
+         const completion = await openai.chat.completions.create({
+           model: "gpt-4o-mini", // Use a cheaper model than the Supabase function
+           messages: [
+             {
+               role: "system",
+               content: systemPrompt
+             },
+             {
+               role: "user",
+               content: `Insight:\n${originalInsight}\n\nUser's Response:\n${userResponse}`
+             }
+           ],
+           response_format: { type: "json_object" }
+         });
+         
+         // Parse and validate the response
+         if (completion.choices && completion.choices.length > 0) {
+           try {
+             const content = completion.choices[0].message.content;
+             const result = JSON.parse(content);
+             
+             // Ensure the result has the required fields
+             if (!result.factors || !result.eval_score || !result.explanation) {
+               throw new Error("Missing required fields in evaluation result");
+             }
+             
+             // Make sure simplified_score exists (0-5 scale)
+             if (!result.simplified_score) {
+               result.simplified_score = Math.min(5, Math.max(0, result.eval_score * 5));
+             }
+             
+             console.log('Direct evaluation result:', JSON.stringify(result, null, 2));
+             return res.json(result);
+           } catch (parseError) {
+             console.error('Error parsing OpenAI response:', parseError);
+             return res.status(500).json({
+               error: 'Invalid response format from evaluation service',
+               details: parseError.message
+             });
+           }
+         } else {
+           return res.status(500).json({
+             error: 'No response from evaluation service'
+           });
+         }
+       } catch (openaiError) {
+         console.error('OpenAI API error:', openaiError);
+         return res.status(500).json({
+           error: 'Error calling evaluation service',
+           details: openaiError.message
+         });
+       }
+     } catch (error) {
+       console.error('Server error in evaluation:', error);
+       return res.status(500).json({ error: 'Unexpected server error', details: error.message });
+     }
+   });
+
    // Helper function to generate fallback questions
    function generateFallbackQuestions(concept, depthTarget) {
      const levelDescriptions = {

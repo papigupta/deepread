@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deepread Prompt Generation Test</title>
+    <script>
+        async function testAPI() {
+            const response = await fetch('http://localhost:3000/test');
+            const data = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(data);
+        }
+
+        async function submitBook() {
+            const bookName = document.getElementById('bookInput').value;
+            document.getElementById('status').textContent = 'Loading concepts...';
+            document.getElementById('conceptsContainer').innerHTML = '';
+            document.getElementById('questionsContainer').innerHTML = '';
+            
+            // Show loading spinner
+            document.getElementById('loadingSpinner').style.display = 'flex';
+            document.getElementById('loadingText').textContent = 'Extracting concepts...';
+            
+            try {
+                console.log(`Sending request for book: ${bookName}`);
+                
+                const response = await fetch('http://localhost:3000/extract-concepts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ bookName })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    throw new Error(`Network response was not ok: ${response.status} ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Concepts data:', data);
+                
+                const concepts = data.concepts || [];
+                
+                if (concepts.length > 0) {
+                    document.getElementById('status').textContent = 'Assigning depth targets...';
+                    await assignDepthTargets(bookName, concepts);
+                } else {
+                    document.getElementById('status').textContent = 'No concepts found.';
+                }
+                
+            } catch (error) {
+                console.error('Error fetching concepts:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.message;
+                
+                // Use fallback for testing
+                useFallbackConcepts(bookName);
+            } finally {
+                // Hide loading spinner
+                document.getElementById('loadingSpinner').style.display = 'none';
+            }
+        }
+        
+        async function assignDepthTargets(bookName, concepts) {
+            try {
+                // Update loading spinner text
+                document.getElementById('loadingText').textContent = 'Assigning depth targets...';
+                
+                const response = await fetch('http://localhost:3000/assign-depth-targets', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        bookName,
+                        concepts
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response for depth targets:', errorText);
+                    throw new Error(`Network response was not ok: ${response.status} ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Depth targets data:', data);
+                
+                if (data.conceptsWithDepth && data.conceptsWithDepth.length > 0) {
+                    displayConceptsWithDepth(data.conceptsWithDepth);
+                    document.getElementById('status').textContent = 'Concepts and depth targets loaded.';
+                } else {
+                    throw new Error('No depth targets received');
+                }
+                
+            } catch (error) {
+                console.error('Error assigning depth targets:', error);
+                document.getElementById('status').textContent = 'Error with depth targets: ' + error.message;
+                
+                // Use fallback for testing - assign default depth targets
+                const conceptsWithDepth = concepts.map(concept => ({
+                    concept,
+                    depth_target: Math.floor(Math.random() * 4) + 2 // Random depth between 2-5
+                }));
+                displayConceptsWithDepth(conceptsWithDepth);
+            }
+        }
+        
+        function useFallbackConcepts(bookName) {
+            const bookKey = bookName.toLowerCase();
+            const mockConcepts = {
+                "thinking, fast and slow": [
+                    "System 1 vs System 2 thinking",
+                    "Cognitive biases",
+                    "Heuristics",
+                    "Prospect theory",
+                    "Loss aversion",
+                    "Anchoring effect",
+                    "Availability heuristic",
+                    "Overconfidence",
+                    "Sunk cost fallacy",
+                    "Decision making under uncertainty"
+                ],
+                "1984": [
+                    "Totalitarianism",
+                    "Government surveillance",
+                    "Thought control",
+                    "Dystopian society",
+                    "Historical revisionism",
+                    "Manipulation of language",
+                    "Psychological control",
+                    "Political propaganda",
+                    "Individual freedom",
+                    "Resistance against authority"
+                ],
+                "default": [
+                    "Character development",
+                    "Plot structure",
+                    "Setting and atmosphere",
+                    "Themes and motifs",
+                    "Narrative perspective",
+                    "Literary devices",
+                    "Cultural context",
+                    "Historical significance",
+                    "Symbolism",
+                    "Author's style"
+                ]
+            };
+            
+            const concepts = mockConcepts[bookKey] || mockConcepts['default'];
+            const conceptsWithDepth = concepts.map(concept => ({
+                concept,
+                depth_target: Math.floor(Math.random() * 4) + 2 // Random depth between 2-5
+            }));
+            
+            displayConceptsWithDepth(conceptsWithDepth);
+            document.getElementById('status').textContent = 'Using fallback concepts (server not available).';
+        }
+
+        function displayConceptsWithDepth(conceptsWithDepth) {
+            const container = document.getElementById('conceptsContainer');
+            container.innerHTML = '';
+            
+            conceptsWithDepth.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'concept';
+                
+                // Create the depth badge color based on depth level
+                const depthColors = {
+                    1: '#E0F7FA', // Light blue - Recall
+                    2: '#B2EBF2', // Cyan - Reframe
+                    3: '#80DEEA', // Teal - Apply
+                    4: '#4DD0E1', // Darker teal - Contrast
+                    5: '#26C6DA', // Blue - Critique
+                    6: '#00BCD4'  // Dark blue - Remix
+                };
+                const depthColor = depthColors[item.depth_target] || '#F5F5F5';
+                
+                div.innerHTML = `
+                    <div class="concept-info">
+                        <p class="concept-text">${item.concept}</p>
+                        <div class="depth-badge" style="background-color: ${depthColor}">
+                            <span>${item.depth_target}</span>
+                        </div>
+                    </div>
+                    <button onclick="practiceQuestions('${item.concept.replace(/'/g, "\\'")}', ${item.depth_target}, '${document.getElementById('bookInput').value.replace(/'/g, "\\'")}')">Practice</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        // For backwards compatibility, keep the old display function but don't use it anymore
+        function displayConcepts(concepts) {
+            // This is just a placeholder to maintain compatibility
+            // We'll use displayConceptsWithDepth instead
+            console.log("Legacy displayConcepts called - using fallback instead");
+            
+            const conceptsWithDepth = concepts.map(concept => ({
+                concept,
+                depth_target: 3 // Default depth
+            }));
+            
+            displayConceptsWithDepth(conceptsWithDepth);
+        }
+
+        async function practiceQuestions(concept, depth_target, bookName) {
+            document.getElementById('practiceStatus').textContent = 'Loading questions...';
+            document.getElementById('questionsContainer').innerHTML = '';
+            
+            // Show loading spinner
+            document.getElementById('loadingSpinner').style.display = 'flex';
+            document.getElementById('loadingText').textContent = 'Generating questions...';
+            
+            try {
+                console.log(`Generating questions for: ${concept}, depth: ${depth_target}, book: ${bookName}`);
+                
+                // Log the full request details for debugging
+                const requestBody = { 
+                    concept, 
+                    depth_target: parseInt(depth_target), 
+                    book_title: bookName 
+                };
+                console.log('Request body:', JSON.stringify(requestBody));
+                
+                const response = await fetch('http://localhost:3000/generate-questions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response status:', response.status);
+                    console.error('Error response text:', errorText);
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Response is not JSON. Content type:', contentType);
+                    console.error('Response text:', text);
+                    throw new Error('Response is not JSON. Received: ' + text.substring(0, 100) + '...');
+                }
+                
+                const data = await response.json();
+                console.log('Questions data:', data);
+                
+                if (!data.questions || !Array.isArray(data.questions)) {
+                    console.error('Invalid response format:', data);
+                    throw new Error('Server returned invalid data format');
+                }
+                
+                displayQuestions(data.questions, concept, depth_target);
+                document.getElementById('practiceStatus').textContent = '';
+            } catch (error) {
+                console.error('Error generating questions:', error);
+                document.getElementById('practiceStatus').textContent = 'Error: ' + error.message;
+                document.getElementById('questionsContainer').innerHTML = `
+                    <div style="padding: 20px; background: #ffeeee; border-radius: 8px;">
+                        <h3>Error Occurred</h3>
+                        <p>${error.message}</p>
+                        <p>Please make sure the backend server is running at http://localhost:3000</p>
+                        <div>
+                            <button onclick="practiceQuestionsFallback('${concept.replace(/'/g, "\\'")}', ${depth_target}, '${bookName.replace(/'/g, "\\'")}')">
+                                Try with fallback questions
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } finally {
+                // Hide loading spinner
+                document.getElementById('loadingSpinner').style.display = 'none';
+            }
+        }
+
+        // Add a fallback function for when the server is not available
+        function practiceQuestionsFallback(concept, depth_target, bookName) {
+            document.getElementById('practiceStatus').textContent = 'Using fallback questions...';
+            document.getElementById('questionsContainer').innerHTML = '';
+            
+            console.log(`Generating fallback questions for: ${concept}, depth: ${depth_target}, book: ${bookName}`);
+            
+            const levelQuestions = {
+                1: [ // Recall
+                    `What is the definition of ${concept}?`,
+                    `Can you identify the key characteristics of ${concept}?`,
+                    `How is ${concept} described in the book "${bookName}"?`
+                ],
+                2: [ // Reframe
+                    `Explain ${concept} in your own words.`,
+                    `How would you describe ${concept} to someone who has never heard of it before?`,
+                    `What is your personal understanding of ${concept} after reading "${bookName}"?`
+                ],
+                3: [ // Apply
+                    `How can you apply ${concept} to solve a real-world problem?`,
+                    `Describe a situation where you might use ${concept} in your daily life.`,
+                    `What would be an example of ${concept} in a modern context different from the book?`
+                ],
+                4: [ // Contrast
+                    `How does ${concept} compare to similar ideas or concepts?`,
+                    `What are the key differences between ${concept} and other related concepts in "${bookName}"?`,
+                    `How might someone with a different perspective view ${concept}?`
+                ],
+                5: [ // Critique
+                    `What are the limitations or flaws of ${concept}?`,
+                    `Under what circumstances might ${concept} not be applicable or useful?`,
+                    `How would you criticize or challenge the assumptions behind ${concept}?`
+                ],
+                6: [ // Remix
+                    `How could ${concept} be combined with another model or framework to create something new?`,
+                    `What innovative applications of ${concept} can you imagine beyond what was described in "${bookName}"?`,
+                    `If you were to evolve or transform ${concept} for the future, what would it look like?`
+                ]
+            };
+            
+            const questions = levelQuestions[depth_target] || levelQuestions[3];
+            displayQuestions(questions, concept, depth_target);
+            document.getElementById('practiceStatus').textContent = 'Using fallback questions (server not available)';
+        }
+
+        function displayQuestions(questions, concept, depth_target) {
+            const depthNames = {
+                1: "Recall",
+                2: "Reframe",
+                3: "Apply",
+                4: "Contrast",
+                5: "Critique",
+                6: "Remix"
+            };
+            
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = `
+                <h3>Practice Questions for: ${concept}</h3>
+                <p class="depth-info">Depth Level ${depth_target}: ${depthNames[depth_target]}</p>
+            `;
+            
+            questions.forEach((question, index) => {
+                const div = document.createElement('div');
+                div.className = 'question';
+                div.innerHTML = `
+                    <p class="question-text">${question}</p>
+                    <textarea rows="4" placeholder="Your answer..."></textarea>
+                `;
+                container.appendChild(div);
+            });
+            
+            const button = document.createElement('button');
+            button.textContent = 'Submit Answers';
+            button.className = 'submit-btn';
+            button.onclick = () => {
+                alert('Answers submitted (demo)');
+                // Here you would normally save the answers to a database
+            };
+            container.appendChild(button);
+        }
+    </script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f7;
+            color: #333;
+            line-height: 1.5;
+        }
+        h1, h2, h3 {
+            color: #1d1d1f;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #d2d2d7;
+            margin: 30px 0;
+        }
+        input, select, textarea {
+            font-family: inherit;
+            font-size: 16px;
+            padding: 10px;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            margin: 5px 0;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #0066cc;
+        }
+        button {
+            padding: 10px 16px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #004d99;
+        }
+        .concept {
+            padding: 15px;
+            margin: 10px 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .concept-info {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+        .concept-text {
+            font-weight: 500;
+            margin: 0 15px 0 0;
+            flex: 1;
+        }
+        .depth-select {
+            width: 150px;
+        }
+        .depth-badge {
+            width: 30px;
+            height: 30px;
+            border-radius: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-left: 10px;
+            color: #333;
+            font-weight: bold;
+        }
+        .question {
+            padding: 20px;
+            margin: 15px 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .question-text {
+            font-weight: 500;
+            margin-top: 0;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .depth-info {
+            color: #666;
+            font-style: italic;
+            margin-top: 0;
+        }
+        #status, #practiceStatus {
+            margin: 10px 0;
+            font-weight: 500;
+        }
+        .submit-btn {
+            margin-top: 15px;
+            background: #34c759;
+        }
+        .submit-btn:hover {
+            background: #28a745;
+        }
+        .book-input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        #bookInput {
+            flex: 1;
+        }
+        @media (max-width: 768px) {
+            .concept-info {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .depth-select {
+                margin-top: 10px;
+            }
+        }
+        .loading-spinner-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px 0;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #0066cc;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Deepread Prompt Generation Test</h1>
+    <div>
+        <button onclick="testAPI()">Test API Connection</button>
+        <div id="result"></div>
+    </div>
+    <hr>
+    <div>
+        <h2>Enter Book Name</h2>
+        <div class="book-input-container">
+            <input id="bookInput" type="text" placeholder="e.g., Thinking, Fast and Slow">
+            <button onclick="submitBook()">Submit</button>
+        </div>
+        <div id="status"></div>
+        
+        <!-- Add loading spinner -->
+        <div id="loadingSpinner" class="loading-spinner-container" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p id="loadingText">Loading...</p>
+        </div>
+    </div>
+    <div id="conceptsContainer"></div>
+    <hr>
+    <div id="practiceStatus"></div>
+    <div id="questionsContainer"></div>
+</body>
+</html> 

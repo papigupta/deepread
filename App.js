@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Platform, Alert } from 'react-native';
+import { StyleSheet, View, Text, Platform, Alert, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import BookInputScreen from './src/BookInputScreen';
+import PracticeQuestions from './src/PracticeQuestions';
 
 // Get the correct localhost address based on platform
 // For physical devices, replace localhost with your computer's IP address
@@ -18,6 +19,8 @@ export default function App() {
   const [source, setSource] = useState(null);
   const [depthSource, setDepthSource] = useState(null);
   const [bookName, setBookName] = useState('');
+  const [practiceModalVisible, setPracticeModalVisible] = useState(false);
+  const [activePracticeConcept, setActivePracticeConcept] = useState(null);
 
   const handleBookSubmit = async (name) => {
     console.log('Book submitted:', name);
@@ -121,6 +124,17 @@ export default function App() {
     }
   };
 
+  const handlePracticePress = (concept, depth_target) => {
+    console.log(`Practice pressed for ${concept} with depth ${depth_target}`);
+    setActivePracticeConcept({ concept, depth_target });
+    setPracticeModalVisible(true);
+  };
+
+  const closePracticeModal = () => {
+    setPracticeModalVisible(false);
+    setActivePracticeConcept(null);
+  };
+
   // Add debug render output
   console.log('RENDER - concepts:', concepts.length, 'conceptsWithDepth:', conceptsWithDepth.length);
 
@@ -140,28 +154,59 @@ export default function App() {
         <Text style={styles.debug}>- Book: {bookName}</Text>
       </View>
       
-      {conceptsWithDepth.length > 0 ? (
-        <View style={styles.conceptsContainer}>
-          <Text style={styles.heading}>Key Concepts with Depth Targets:</Text>
-          {depthSource && <Text style={styles.source}>Source: {depthSource}</Text>}
-          {conceptsWithDepth.map((item, index) => (
-            <View key={index} style={styles.conceptWithDepth}>
-              <Text style={styles.concept}>{item.concept}</Text>
-              <View style={[styles.depthBadge, { backgroundColor: getDepthColor(item.depth_target) }]}>
-                <Text style={styles.depthText}>{item.depth_target}</Text>
+      <ScrollView style={styles.scrollView}>
+        {conceptsWithDepth.length > 0 ? (
+          <View style={styles.conceptsContainer}>
+            <Text style={styles.heading}>Key Concepts with Depth Targets:</Text>
+            {depthSource && <Text style={styles.source}>Source: {depthSource}</Text>}
+            {conceptsWithDepth.map((item, index) => (
+              <View key={index} style={styles.conceptWithDepthContainer}>
+                <View style={styles.conceptWithDepth}>
+                  <Text style={styles.concept}>{item.concept}</Text>
+                  <View style={[styles.depthBadge, { backgroundColor: getDepthColor(item.depth_target) }]}>
+                    <Text style={styles.depthText}>{item.depth_target}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  style={styles.practiceButton}
+                  onPress={() => handlePracticePress(item.concept, item.depth_target)}
+                >
+                  <Text style={styles.practiceButtonText}>Practice</Text>
+                </TouchableOpacity>
               </View>
-            </View>
-          ))}
+            ))}
+          </View>
+        ) : concepts.length > 0 && (
+          <View style={styles.conceptsContainer}>
+            <Text style={styles.heading}>Key Concepts for Your Book:</Text>
+            {source && <Text style={styles.source}>Source: {source}</Text>}
+            {concepts.map((concept, index) => (
+              <Text key={index} style={styles.concept}>{concept}</Text>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+      
+      {/* Practice Questions Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={practiceModalVisible}
+        onRequestClose={closePracticeModal}
+      >
+        <View style={styles.centeredView}>
+          <View style={styles.modalView}>
+            {activePracticeConcept && (
+              <PracticeQuestions
+                concept={activePracticeConcept.concept}
+                depth_target={activePracticeConcept.depth_target}
+                bookName={bookName}
+                onClose={closePracticeModal}
+              />
+            )}
+          </View>
         </View>
-      ) : concepts.length > 0 && (
-        <View style={styles.conceptsContainer}>
-          <Text style={styles.heading}>Key Concepts for Your Book:</Text>
-          {source && <Text style={styles.source}>Source: {source}</Text>}
-          {concepts.map((concept, index) => (
-            <Text key={index} style={styles.concept}>{concept}</Text>
-          ))}
-        </View>
-      )}
+      </Modal>
     </View>
   );
 }
@@ -194,6 +239,9 @@ const styles = StyleSheet.create({
     color: 'red',
     fontSize: 16,
   },
+  scrollView: {
+    flex: 1,
+  },
   conceptsContainer: {
     marginTop: 20,
   },
@@ -210,11 +258,13 @@ const styles = StyleSheet.create({
   },
   concept: {
     fontSize: 16,
-    marginBottom: 5,
     padding: 10,
     backgroundColor: '#f0f0f0',
     borderRadius: 5,
     flex: 1,
+  },
+  conceptWithDepthContainer: {
+    marginBottom: 10,
   },
   conceptWithDepth: {
     flexDirection: 'row',
@@ -233,6 +283,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
+  practiceButton: {
+    backgroundColor: '#4CAF50',
+    padding: 8,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  practiceButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
   debug: {
     fontSize: 12,
     fontWeight: 'bold',
@@ -245,5 +306,26 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: '#FFECB3',
     borderRadius: 5,
-  }
+  },
+  centeredView: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalView: {
+    margin: 20,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    width: '90%',
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
 });

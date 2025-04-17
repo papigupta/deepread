@@ -435,6 +435,154 @@ ${concepts.map((concept, index) => `${index + 1}. ${concept}`).join('\n')}`
      }
    });
 
+   app.post('/generate-questions', async (req, res) => {
+     console.log('\n==== NEW QUESTION GENERATION REQUEST ====');
+     console.log('Request body:', req.body);
+     
+     const { concept, depth_target, book_title, related_concepts, mental_models_pool } = req.body;
+
+     if (!concept || !depth_target || !book_title) {
+       console.log('Missing required fields in request');
+       return res.status(400).json({ error: 'Request must include concept, depth_target, and book_title' });
+     }
+
+     try {
+       console.log(`Generating questions for concept: "${concept}" with depth_target: ${depth_target} from book: "${book_title}"`);
+       
+       try {
+         // Initialize OpenAI
+         console.log("Creating OpenAI client with key prefix:", process.env.OPENAI_API_KEY.substring(0, 10) + "...");
+         const openai = new OpenAI({
+           apiKey: process.env.OPENAI_API_KEY.trim(),
+         });
+         
+         // Use OpenAI to generate questions
+         console.log("Sending question generation request to OpenAI API...");
+         
+         const messages = [
+           {
+             role: "system",
+             content: `You are an expert educational content designer who creates practice questions to help students understand concepts deeply.
+
+Each depth level corresponds to a specific cognitive level:
+Level 1: Recall - Recognize or identify the idea
+Level 2: Reframe - Explain it in their own words
+Level 3: Apply - Use it in real-life context
+Level 4: Contrast - Compare it with other ideas
+Level 5: Critique - Evaluate flaws or limitations
+Level 6: Remix - Combine it with other models
+
+Your task is to generate 3 thought-provoking, open-ended questions for the requested concept at the specified depth level. These questions should help students truly understand and internalize the concept.`
+           },
+           {
+             role: "user",
+             content: `Generate 3 practice questions for the concept "${concept}" from the book "${book_title}" at depth level ${depth_target}.
+
+${related_concepts && related_concepts.length > 0 ? `Related concepts: ${related_concepts.join(', ')}` : ''}
+${mental_models_pool && mental_models_pool.length > 0 ? `Mental models pool: ${mental_models_pool.join(', ')}` : ''}
+
+The questions should:
+1. Match the cognitive depth level ${depth_target}
+2. Be open-ended, encouraging deep thinking
+3. Be specific to this concept, not generic
+4. Include context relevant to the book when possible
+
+Return ONLY a JSON object with this structure:
+{
+  "questions": [
+    "Question 1 here",
+    "Question 2 here",
+    "Question 3 here"
+  ]
+}`
+           }
+         ];
+         
+         console.log("Question generation request messages:", JSON.stringify(messages, null, 2));
+         
+         try {
+           const completion = await openai.chat.completions.create({
+             model: "gpt-4o-mini",
+             messages: messages,
+             temperature: 0.7,
+             max_tokens: 1000,
+           });
+           
+           console.log("Received question generation response from OpenAI API");
+           
+           if (completion.choices && completion.choices.length > 0) {
+             const responseContent = completion.choices[0].message.content.trim();
+             console.log("Raw question generation response:", responseContent);
+             
+             try {
+               // Extract JSON array from the response
+               let jsonMatch = responseContent.match(/```json\s*([\s\S]*?)\s*```/);
+               
+               // If the response doesn't use the ```json format, try to parse the entire response
+               const jsonText = jsonMatch ? jsonMatch[1] : responseContent;
+               
+               const questionsData = JSON.parse(jsonText);
+               console.log("Parsed questions:", questionsData);
+               
+               if (questionsData && questionsData.questions && Array.isArray(questionsData.questions)) {
+                 return res.json({ 
+                   questions: questionsData.questions, 
+                   source: 'openai' 
+                 });
+               } else {
+                 console.log("Invalid response format, using fallback");
+                 const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+                 return res.json({ questions: fallbackQuestions, source: 'parsing-failed-fallback' });
+               }
+             } catch (parseError) {
+               console.error("Error parsing JSON response:", parseError);
+               const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+               return res.json({ questions: fallbackQuestions, source: 'json-parse-error-fallback' });
+             }
+           } else {
+             console.log("No valid response, using fallback");
+             const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+             return res.json({ questions: fallbackQuestions, source: 'api-empty-response-fallback' });
+           }
+         } catch (callError) {
+           console.error("Error calling OpenAI API for question generation:", callError);
+           const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+           return res.json({ questions: fallbackQuestions, source: `api-call-error-fallback: ${callError.message}` });
+         }
+       } catch (clientError) {
+         console.error("Error creating OpenAI client:", clientError.message);
+         const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+         return res.json({ questions: fallbackQuestions, source: 'client-error-fallback' });
+       }
+     } catch (error) {
+       console.error('Server error:', error.message);
+       const fallbackQuestions = generateFallbackQuestions(concept, depth_target);
+       return res.json({ 
+         questions: fallbackQuestions,
+         source: 'error-handler-fallback'
+       });
+     }
+   });
+
+   // Helper function to generate fallback questions
+   function generateFallbackQuestions(concept, depthTarget) {
+     const levelDescriptions = {
+       1: "recall or identify",
+       2: "explain in your own words",
+       3: "apply in a real-life context",
+       4: "compare with other ideas",
+       5: "evaluate critically",
+       6: "combine with other models"
+     };
+     
+     // Generate 3 fallback questions based on the depth target
+     return [
+       `Can you ${levelDescriptions[depthTarget]} the concept of ${concept}?`,
+       `What is an example where you would ${levelDescriptions[depthTarget]} ${concept}?`,
+       `Why is it important to ${levelDescriptions[depthTarget]} ${concept}?`
+     ];
+   }
+
    const PORT = process.env.PORT || 3000;
    app.listen(PORT, () => {
      console.log(`Server is running on port ${PORT}`);

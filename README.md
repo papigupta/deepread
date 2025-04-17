@@ -6,7 +6,7 @@
 
 ## ✨ Core Idea
 
-Reading is easy. Remembering, applying, and growing from what you read? That’s the hard part.
+Reading is easy. Remembering, applying, and growing from what you read? That's the hard part.
 
 Deepread turns passive reading into an **active learning ritual** — powered by LLMs, personal insight tracking, and daily practice.
 
@@ -46,7 +46,7 @@ For stack rationale, see [`tech-stack.md`](./tech-stack.md)
 
 ## 🔮 Vision
 
-> “Don't just read the book. Let it change you.”  
+> "Don't just read the book. Let it change you."  
 > Deepread is your tool for comprehension, application, and personal growth — one insight at a time.
 
 ---
@@ -86,3 +86,28 @@ Private for now. Will open-source parts of it when ready.
 
 Built by [@papigupta](https://github.com/papigupta)  
 Project logs, ideas, and vision are evolving in public. Stay tuned.
+
+## Dynamic Practice Questions
+
+The app now supports generating practice questions for each concept based on its assigned depth level:
+
+- Level 1: Recall, recognize, or identify the idea
+- Level 2: Reframe, explain it in their own words  
+- Level 3: Apply, use it in real-life context
+- Level 4: Contrast, compare it with other ideas
+- Level 5: Critique, evaluate its flaws or limitations
+- Level 6: Remix, combine it with other models or frameworks
+
+When you click the "Practice" button next to any concept, the app will:
+
+1. Generate 3 tailored questions using OpenAI's API
+2. Present those questions to you in a modal
+3. Allow you to input answers to each question
+4. Store your responses (implementation pending)
+
+The question generation pipeline:
+- Takes a concept and its depth_target
+- Builds a JSON payload with context (concept, depth, book title, related concepts, mental models)
+- Sends this to OpenAI's API with system prompts and examples
+- Gets back structured question responses
+- Caches the results (implementation pending)

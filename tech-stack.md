@@ -1,7 +1,7 @@
 | Layer               | Tool/API                                |
 | ------------------- | --------------------------------------- |
 | Frontend            | React Native (Expo)                     |
-| UI Lib              | Tamagui / NativeBase                    |
+| UI Lib              | Tamagui                                 |
 | State Mgmt          | Zustand                                 |
 | Backend/Auth        | Supabase                                |
 | Book Search         | Open Library API                        |

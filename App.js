@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Platform, Alert, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, Platform, Alert, TouchableOpacity, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import BookInputScreen from './src/BookInputScreen';
 import PracticeQuestions from './src/PracticeQuestions';
+import LoginScreen from './src/Auth/LoginScreen';
+import { supabase } from './src/supabase';
 
 // Get the correct localhost address based on platform
 // For physical devices, replace localhost with your computer's IP address
-// Your computer's IP address is: 192.168.1.4
 const API_URL = Platform.OS === 'android' 
   ? 'http://10.0.2.2:3000' 
-  : 'http://192.168.1.4:3000'; // Using actual IP for both iOS simulator and physical devices
+  : 'http://172.20.10.2:3000'; // Updated to match the Expo server IP
 
 export default function App() {
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // App state
   const [concepts, setConcepts] = useState([]);
   const [conceptsWithDepth, setConceptsWithDepth] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +28,78 @@ export default function App() {
   const [bookName, setBookName] = useState('');
   const [practiceModalVisible, setPracticeModalVisible] = useState(false);
   const [activePracticeConcept, setActivePracticeConcept] = useState(null);
+
+  // Check for authentication on load
+  useEffect(() => {
+    console.log("App mounted - checking authentication status");
+    checkAuth();
+
+    // Set up auth state change listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log("Auth state changed:", event, "Session:", session ? "Present" : "None");
+        
+        if (event === 'SIGNED_IN' && session) {
+          console.log("User signed in:", session.user.email);
+          setSession(session);
+          setIsAuthenticated(true);
+          setAuthLoading(false);
+        } else if (event === 'SIGNED_OUT') {
+          console.log("User signed out");
+          setSession(null);
+          setIsAuthenticated(false);
+          setAuthLoading(false);
+        } else if (event === 'TOKEN_REFRESHED') {
+          console.log("Token refreshed");
+          setSession(session);
+          setIsAuthenticated(!!session);
+          setAuthLoading(false);
+        }
+      }
+    );
+
+    // Cleanup on unmount
+    return () => {
+      console.log("App unmounting - cleaning up auth listener");
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
+  }, []);
+
+  const checkAuth = async () => {
+    console.log("Checking authentication status...");
+    try {
+      setAuthLoading(true);
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+        console.error("Error checking auth:", error);
+        setIsAuthenticated(false);
+        return;
+      }
+      
+      console.log("Session check result:", session ? "Active session" : "No session");
+      setSession(session);
+      setIsAuthenticated(!!session);
+    } catch (error) {
+      console.error("Exception checking auth:", error);
+      setIsAuthenticated(false);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setIsAuthenticated(false);
+      setSession(null);
+    } catch (error) {
+      console.error("Error signing out:", error);
+      Alert.alert("Error signing out", error.message);
+    }
+  };
 
   const handleBookSubmit = async (name) => {
     console.log('Book submitted:', name);
@@ -138,8 +217,41 @@ export default function App() {
   // Add debug render output
   console.log('RENDER - concepts:', concepts.length, 'conceptsWithDepth:', conceptsWithDepth.length);
 
+  // Handle loading state
+  if (authLoading) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.message}>Loading...</Text>
+        <ActivityIndicator size="large" color="#0000ff" />
+      </View>
+    );
+  }
+
+  // Log authentication state for debugging
+  console.log("Auth state in App.js:", { isAuthenticated, session: session?.user?.email || "none" });
+
+  // If not authenticated, show login screen
+  if (!isAuthenticated) {
+    console.log("Showing login screen");
+    return <LoginScreen setIsAuthenticated={setIsAuthenticated} setLoading={setAuthLoading} />;
+  }
+
+  // We are authenticated, show the main app
+  console.log("Showing main app for user:", session?.user?.email);
+
+  // Return the original UI with an added sign out button
   return (
     <View style={styles.container}>
+      {/* Add sign out button */}
+      <View style={styles.header}>
+        <Text style={styles.welcomeText}>
+          Welcome, {session?.user?.email || 'User'}
+        </Text>
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+
       <BookInputScreen onSubmit={handleBookSubmit} />
       
       {loading && <Text style={styles.message}>Loading concepts...</Text>}
@@ -354,5 +466,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 10,
+    width: '100%',
+    backgroundColor: '#f0f0f0',
+  },
+  welcomeText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  signOutButton: {
+    backgroundColor: '#f44336',
+    padding: 8,
+    borderRadius: 5,
+  },
+  signOutButtonText: {
+    color: 'white',
+    fontSize: 12,
   },
 });

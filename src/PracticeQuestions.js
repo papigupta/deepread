@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 
 const API_URL = Platform.OS === 'android' 
   ? 'http://10.0.2.2:3000' 
-  : 'http://192.168.1.4:3000';
+  : 'http://172.20.10.2:3000';
 
 const PracticeQuestions = ({ concept, depth_target, current_depth, bookName, onClose, onLevelComplete }) => {
   const [questions, setQuestions] = useState([]);

@@ -1,21 +1,28 @@
+import * as Linking from 'expo-linking';
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, Platform, Alert, TouchableOpacity, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import BookInputScreen from './src/BookInputScreen';
 import PracticeQuestions from './src/PracticeQuestions';
-import LoginScreen from './src/Auth/LoginScreen';
-import { supabase } from './src/supabase';
+import LoginScreen from './src/LogicScreen';  // 🔥 FIXED path, NO extension
+import LoginCallbackScreen from './src/LogicCallbackScreen';  // ✅ Already correct
+import { supabase } from './src/lib/supabaseClient';
 
-// Get the correct localhost address based on platform
-// For physical devices, replace localhost with your computer's IP address
-const API_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://172.20.10.2:3000'; // Updated to match the Expo server IP
+// rest of your App.js...
+
+
+
+import Constants from 'expo-constants';
+
+const API_URL = Constants.expoConfig?.extra?.API_URL || 'http://localhost:3000';
 
 export default function App() {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isHandlingCallback, setIsHandlingCallback] = useState(false);
+
+
 
   // App state
   const [concepts, setConcepts] = useState([]);
@@ -33,6 +40,13 @@ export default function App() {
   useEffect(() => {
     console.log("App mounted - checking authentication status");
     checkAuth();
+
+    Linking.getInitialURL().then(url => {
+      if (url && url.includes('access_token')) {
+        console.log("Detected magic link callback:", url);
+        setIsHandlingCallback(true);
+      }
+    });
 
     // Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -231,10 +245,20 @@ export default function App() {
   console.log("Auth state in App.js:", { isAuthenticated, session: session?.user?.email || "none" });
 
   // If not authenticated, show login screen
+  if (isHandlingCallback) {
+    return (
+      <LoginCallbackScreen
+        setIsAuthenticated={setIsAuthenticated}
+        setAuthLoading={setAuthLoading}
+        setIsHandlingCallback={setIsHandlingCallback}  // 👈 ADD THIS
+      />
+    );
+  }  
+  
   if (!isAuthenticated) {
-    console.log("Showing login screen");
     return <LoginScreen setIsAuthenticated={setIsAuthenticated} setLoading={setAuthLoading} />;
   }
+  
 
   // We are authenticated, show the main app
   console.log("Showing main app for user:", session?.user?.email);

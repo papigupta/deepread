@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
 
-const API_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://172.20.10.2:3000';
+import Constants from 'expo-constants';
+const API_URL = Constants.expoConfig?.extra?.API_URL || 'http://localhost:3000';
 
 const PracticeQuestions = ({ concept, depth_target, current_depth, bookName, onClose, onLevelComplete }) => {
   const [questions, setQuestions] = useState([]);

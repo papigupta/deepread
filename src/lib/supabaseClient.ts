@@ -17,3 +17,7 @@ export const supabase = createClient(
     }
   }
 );
+
+// Debug logs to verify Supabase client health and version
+console.log("🔍 Supabase client instance →", supabase);
+console.log("🧪 Supabase URL:", SUPABASE_URL);

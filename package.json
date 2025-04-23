@@ -22,17 +22,14 @@
     "@tamagui/shorthands": "^1.126.1",
     "@tamagui/theme-base": "^1.126.1",
     "expo": "~50.0.0",
-"dependencies": {
-  "expo-linear-gradient": "^14.0.2",
-  "expo-linking": "^7.0.5",
-  "expo": "^49.0.0",
-  "react": "18.2.0"
-}
+    "expo-linear-gradient": "^14.0.2",
+    "expo-linking": "^7.0.5",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.73.6",
     "react-native-svg": "^15.11.2",
     "react-native-url-polyfill": "^2.0.0",
+    "react-native-uuid": "^2.0.3",
     "react-native-web": "~0.19.6",
     "tamagui": "^1.126.1"
   },

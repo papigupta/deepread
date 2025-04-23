@@ -14,6 +14,53 @@
    console.log("OPENAI_API_KEY starts with:", process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.substring(0, 10) : "not set");
    console.log("\n===== SERVER STARTED AND READY FOR REQUESTS =====\n");
 
+   function getFactorsForDepth(depthTarget) {
+    const factors = {
+      1: { // Recall
+        accuracy: 0.40,
+        understanding: 0.30,
+        clarity: 0.20,
+        relevance: 0.10
+      },
+      2: { // Reframe
+        understanding: 0.30,
+        clarity: 0.30,
+        accuracy: 0.20,
+        relevance: 0.20
+      },
+      3: { // Apply
+        context_fit: 0.35,
+        relevance: 0.20,
+        understanding: 0.20,
+        clarity: 0.15,
+        depth: 0.10
+      },
+      4: { // Contrast
+        understanding: 0.25,
+        depth: 0.25,
+        relevance: 0.20,
+        clarity: 0.15,
+        accuracy: 0.15
+      },
+      5: { // Critique
+        depth: 0.30,
+        understanding: 0.25,
+        clarity: 0.20,
+        context_fit: 0.15,
+        relevance: 0.10
+      },
+      6: { // Remix
+        creativity: 0.30,
+        depth: 0.25,
+        understanding: 0.20,
+        context_fit: 0.15,
+        clarity: 0.10
+      }
+    };
+    
+    return factors[depthTarget] || factors[2]; // Default to Reframe if invalid depth
+  }
+
    try {
      // Initialize OpenAI client
      const openai = new OpenAI({
@@ -594,7 +641,7 @@ Return ONLY a JSON object with this structure:
              method: 'POST',
              headers: {
                'Content-Type': 'application/json',
-               'Authorization': `Bearer ${supabaseKey}`
+               'Authorization': '',
              },
              body: JSON.stringify({
                userResponse,
@@ -624,52 +671,6 @@ Return ONLY a JSON object with this structure:
        console.log('Using direct OpenAI evaluation...');
        
        // Helper function to determine factors and weights
-       function getFactorsForDepth(depthTarget) {
-         const factors = {
-           1: { // Recall
-             accuracy: 0.40,
-             understanding: 0.30,
-             clarity: 0.20,
-             relevance: 0.10
-           },
-           2: { // Reframe
-             understanding: 0.30,
-             clarity: 0.30,
-             accuracy: 0.20,
-             relevance: 0.20
-           },
-           3: { // Apply
-             context_fit: 0.35,
-             relevance: 0.20,
-             understanding: 0.20,
-             clarity: 0.15,
-             depth: 0.10
-           },
-           4: { // Contrast
-             understanding: 0.25,
-             depth: 0.25,
-             relevance: 0.20,
-             clarity: 0.15,
-             accuracy: 0.15
-           },
-           5: { // Critique
-             depth: 0.30,
-             understanding: 0.25,
-             clarity: 0.20,
-             context_fit: 0.15,
-             relevance: 0.10
-           },
-           6: { // Remix
-             creativity: 0.30,
-             depth: 0.25,
-             understanding: 0.20,
-             context_fit: 0.15,
-             clarity: 0.10
-           }
-         };
-         
-         return factors[depthTarget] || factors[2]; // Default to Reframe if invalid depth
-       }
        
        // Get the depth name for display
        function getDepthName(depthTarget) {

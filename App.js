@@ -36,6 +36,59 @@ export default function App() {
   const [practiceModalVisible, setPracticeModalVisible] = useState(false);
   const [activePracticeConcept, setActivePracticeConcept] = useState(null);
 
+  // Function to ensure the authenticated user exists in the users table
+  const ensureUserExists = async (userId, userEmail) => {
+    try {
+      console.log("Checking if user exists in users table:", userId);
+      
+      // First check if the user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+      
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "no rows returned" error
+        console.error("Error checking user existence:", checkError);
+        return false;
+      }
+      
+      // If user exists, we're done
+      if (existingUser) {
+        console.log("User already exists in users table:", userId);
+        return true;
+      }
+      
+      // User doesn't exist, create a new record
+      console.log("Creating new user record for:", userId, userEmail);
+      
+      const newUser = {
+        id: userId,
+        pen_name: userEmail?.split('@')[0] || 'Anonymous',
+        email: userEmail,
+        streak_count: 0,
+        last_practice_date: null,
+        created_at: new Date().toISOString()
+      };
+      
+      const { data: insertedUser, error: insertError } = await supabase
+        .from('users')
+        .insert([newUser])
+        .select();
+      
+      if (insertError) {
+        console.error("Error creating user record:", insertError);
+        return false;
+      }
+      
+      console.log("Successfully created user record:", insertedUser);
+      return true;
+    } catch (error) {
+      console.error("Exception ensuring user exists:", error);
+      return false;
+    }
+  };
+
   // Check for authentication on load
   useEffect(() => {
     console.log("App mounted - checking authentication status");
@@ -55,6 +108,13 @@ export default function App() {
         
         if (event === 'SIGNED_IN' && session) {
           console.log("User signed in:", session.user.email);
+          
+          // Ensure the user exists in the users table
+          await ensureUserExists(
+            session.user.id,
+            session.user.email
+          );
+          
           setSession(session);
           setIsAuthenticated(true);
           setAuthLoading(false);
@@ -94,6 +154,15 @@ export default function App() {
       }
       
       console.log("Session check result:", session ? "Active session" : "No session");
+      
+      if (session) {
+        // Ensure the user exists in the users table
+        await ensureUserExists(
+          session.user.id,
+          session.user.email
+        );
+      }
+      
       setSession(session);
       setIsAuthenticated(!!session);
     } catch (error) {

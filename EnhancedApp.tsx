@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { View, Platform, Alert, Modal } from 'react-native';
-import { supabase } from './src/supabase';
+import { View, Platform, Alert, Modal, ActivityIndicator } from 'react-native';
+import { supabase } from './src/lib/supabaseClient';
 import { YStack, XStack, Text, Separator, ScrollView } from 'tamagui';
 import { Button, Card, Heading } from './components/ui';
 import EnhancedBookInputScreen from './src/EnhancedBookInputScreen';
 import EnhancedConceptList from './src/EnhancedConceptList';
 import EnhancedPracticeQuestions from './src/EnhancedPracticeQuestions';
 import EnhancedLoginScreen from './src/Auth/EnhancedLoginScreen';
+import uuid from 'react-native-uuid';
 
-// Get the correct localhost address based on platform
 const API_URL = Platform.OS === 'android' 
   ? 'http://10.0.2.2:3000' 
-  : 'http://172.20.10.2:3000';
+  : 'http://localhost:3000';
 
 interface ConceptItem {
   concept: string;
   depth_target: number;
+  insight_id: string;
 }
 
 export default function EnhancedApp() {
@@ -38,7 +39,61 @@ export default function EnhancedApp() {
     concept: string;
     depth_target: number;
     current_depth: number;
+    insight_id: string;
   } | null>(null);
+
+  // Function to ensure the authenticated user exists in the users table
+  const ensureUserExists = async (userId, userEmail) => {
+    try {
+      console.log("Checking if user exists in users table:", userId);
+      
+      // First check if the user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+      
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "no rows returned" error
+        console.error("Error checking user existence:", checkError);
+        return false;
+      }
+      
+      // If user exists, we're done
+      if (existingUser) {
+        console.log("User already exists in users table:", userId);
+        return true;
+      }
+      
+      // User doesn't exist, create a new record
+      console.log("Creating new user record for:", userId, userEmail);
+      
+      const newUser = {
+        id: userId,
+        pen_name: userEmail?.split('@')[0] || 'Anonymous',
+        email: userEmail,
+        streak_count: 0,
+        last_practice_date: null,
+        created_at: new Date().toISOString()
+      };
+      
+      const { data: insertedUser, error: insertError } = await supabase
+        .from('users')
+        .insert([newUser])
+        .select();
+      
+      if (insertError) {
+        console.error("Error creating user record:", insertError);
+        return false;
+      }
+      
+      console.log("Successfully created user record:", insertedUser);
+      return true;
+    } catch (error) {
+      console.error("Exception ensuring user exists:", error);
+      return false;
+    }
+  };
 
   // Check for authentication on load
   useEffect(() => {
@@ -52,6 +107,13 @@ export default function EnhancedApp() {
         
         if (event === 'SIGNED_IN' && session) {
           console.log("User signed in:", session.user.email);
+          
+          // Ensure the user exists in the users table
+          await ensureUserExists(
+            session.user.id,
+            session.user.email
+          );
+          
           setSession(session);
           setIsAuthenticated(true);
           setAuthLoading(false);
@@ -91,6 +153,15 @@ export default function EnhancedApp() {
       }
       
       console.log("Session check result:", session ? "Active session" : "No session");
+      
+      if (session) {
+        // Ensure the user exists in the users table
+        await ensureUserExists(
+          session.user.id,
+          session.user.email
+        );
+      }
+      
       setSession(session);
       setIsAuthenticated(!!session);
     } catch (error) {
@@ -168,6 +239,17 @@ export default function EnhancedApp() {
     }
   }, [concepts, bookName]);
 
+  // Debug useEffect to track activePracticeConcept changes
+  useEffect(() => {
+    if (activePracticeConcept) {
+      console.log("🧪 activePracticeConcept updated:", {
+        activePracticeConcept,
+        bookName,
+        practiceModalVisible
+      });
+    }
+  }, [activePracticeConcept, bookName, practiceModalVisible]);
+
   const assignDepthTargets = async (name: string, conceptsList: string[]) => {
     if (!conceptsList || conceptsList.length === 0) {
       console.log('No concepts to assign depth targets to');
@@ -200,9 +282,14 @@ export default function EnhancedApp() {
       console.log('Depth targets received:', JSON.stringify(data.conceptsWithDepth));
       
       if (data.conceptsWithDepth && data.conceptsWithDepth.length > 0) {
-        setConceptsWithDepth(data.conceptsWithDepth);
+        // Add insight_id to each concept
+        const conceptsWithDepthAndId = data.conceptsWithDepth.map(item => ({
+          ...item,
+          insight_id: uuid.v4() as string
+        }));
+        setConceptsWithDepth(conceptsWithDepthAndId);
         setDepthSource(data.source || 'unknown');
-        console.log(`Set ${data.conceptsWithDepth.length} concepts with depth targets`);
+        console.log(`Set ${conceptsWithDepthAndId.length} concepts with depth targets and IDs`);
       } else {
         console.log('No depth targets assigned in response');
       }
@@ -214,9 +301,9 @@ export default function EnhancedApp() {
     }
   };
 
-  const handlePracticePress = (concept: string, depth_target: number) => {
-    console.log(`Practice pressed for ${concept} with depth ${depth_target}`);
-    setActivePracticeConcept({ concept, depth_target, current_depth: 1 });
+  const handlePracticePress = (concept: string, depth_target: number, insight_id: string) => {
+    console.log(`Practice pressed for ${concept} with depth ${depth_target} and insight_id ${insight_id}`);
+    setActivePracticeConcept({ concept, depth_target, current_depth: 1, insight_id });
     setPracticeModalVisible(true);
   };
 
@@ -333,7 +420,12 @@ export default function EnhancedApp() {
               concept={activePracticeConcept.concept}
               depth_target={activePracticeConcept.depth_target}
               current_depth={activePracticeConcept.current_depth}
-              bookName={bookName}
+              insight={{
+                id: activePracticeConcept.insight_id,
+                book_id: activePracticeConcept.insight_id, // Using insight_id as book_id for now
+                title: bookName
+              }}
+              user_id={session?.user?.id}
               onClose={closePracticeModal}
               onLevelComplete={(concept, current_depth, final_depth, evaluationResults) => {
                 console.log('Level completed:', {
@@ -348,7 +440,8 @@ export default function EnhancedApp() {
                   setActivePracticeConcept({
                     concept,
                     depth_target: final_depth, 
-                    current_depth: current_depth + 1
+                    current_depth: current_depth + 1,
+                    insight_id: activePracticeConcept.insight_id
                   });
                 } else {
                   // User completed all levels

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Alert, Platform } from 'react-native';
-import { supabase } from '../supabase';
+import { supabase } from '../lib/supabaseClient';
 import { Card, Heading, TextInput, Button, Label } from '../../components/ui';
 import { YStack, XStack, Text, Separator } from 'tamagui';
 
@@ -15,6 +15,59 @@ export default function EnhancedLoginScreen({ setIsAuthenticated, setLoading }) 
   const [sendingLink, setSendingLink] = useState(false);
   const [accessToken, setAccessToken] = useState('');
 
+  // Function to ensure the authenticated user exists in the users table
+  const ensureUserExists = async (userId, userEmail) => {
+    try {
+      console.log("Checking if user exists in users table:", userId);
+      
+      // First check if the user already exists
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+      
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "no rows returned" error
+        console.error("Error checking user existence:", checkError);
+        return false;
+      }
+      
+      // If user exists, we're done
+      if (existingUser) {
+        console.log("User already exists in users table:", userId);
+        return true;
+      }
+      
+      // User doesn't exist, create a new record
+      console.log("Creating new user record for:", userId, userEmail);
+      
+      const newUser = {
+        id: userId,
+        pen_name: userEmail?.split('@')[0] || 'Anonymous',
+        email: userEmail,
+        streak_count: 0,
+        last_practice_date: null,
+        created_at: new Date().toISOString()
+      };
+      
+      const { data: insertedUser, error: insertError } = await supabase
+        .from('users')
+        .insert([newUser])
+        .select();
+      
+      if (insertError) {
+        console.error("Error creating user record:", insertError);
+        return false;
+      }
+      
+      console.log("Successfully created user record:", insertedUser);
+      return true;
+    } catch (error) {
+      console.error("Exception ensuring user exists:", error);
+      return false;
+    }
+  };
+
   // Debug function - run once when component mounts
   useEffect(() => {
     const checkSession = async () => {
@@ -26,6 +79,13 @@ export default function EnhancedLoginScreen({ setIsAuthenticated, setLoading }) 
         // If we have a session, update auth state
         if (data.session) {
           console.log("DEBUG - Have valid session for:", data.session.user.email);
+          
+          // Ensure user exists in the users table
+          await ensureUserExists(
+            data.session.user.id,
+            data.session.user.email
+          );
+          
           setIsAuthenticated(true);
         }
       } catch (e) {
@@ -45,6 +105,13 @@ export default function EnhancedLoginScreen({ setIsAuthenticated, setLoading }) 
       
       if (session) {
         console.log("User is already logged in:", session.user.email);
+        
+        // Ensure user exists in the users table
+        await ensureUserExists(
+          session.user.id,
+          session.user.email
+        );
+        
         setIsAuthenticated(true);
       }
     } catch (error) {
@@ -134,6 +201,13 @@ export default function EnhancedLoginScreen({ setIsAuthenticated, setLoading }) 
       
       if (data.session) {
         console.log("Successfully authenticated with token for:", data.session.user.email);
+        
+        // Ensure user exists in the users table
+        await ensureUserExists(
+          data.session.user.id,
+          data.session.user.email
+        );
+        
         setIsAuthenticated(true);
       } else {
         throw new Error("No session created");

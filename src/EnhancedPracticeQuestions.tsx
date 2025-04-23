@@ -2,16 +2,40 @@ import React, { useState, useEffect } from 'react';
 import { Alert, ActivityIndicator, Platform } from 'react-native';
 import { YStack, XStack, Text, ScrollView, Separator } from 'tamagui';
 import { Button, Card, Heading, TextInput } from '../components/ui';
+import { insertPracticeSession } from './lib/practiceSessions';
 
-const API_URL = Platform.OS === 'android' 
-  ? 'http://10.0.2.2:3000' 
-  : 'http://172.20.10.2:3000';
+
+const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL!;
+
+// Log API URL on component initialization
+console.log("🔗 API_URL for EnhancedPracticeQuestions:", API_URL);
+
+// Helper function to validate UUID strings
+const isValidUUID = (id: string): boolean => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+};
+
+function getFactorsForDepth(depth: number) {
+  return {
+    clarity: 0.4,
+    application: 0.3,
+    depth: 0.3,
+  };
+}
+
 
 interface PracticeQuestionsProps {
   concept: string;
   depth_target: number;
   current_depth: number;
-  bookName: string;
+  insight: {
+    id: string;
+    book_id: string;
+    title?: string;
+    // other insight properties as needed
+  };
+  user_id: string;
   onClose: () => void;
   onLevelComplete: (
     concept: string, 
@@ -28,14 +52,26 @@ interface EvaluationResult {
   error?: string;
 }
 
+interface SessionResponse {
+  level: number;
+  question: string;
+  answer: string;
+  result: EvaluationResult;
+  auto_difficulty_next?: 'easier' | 'same' | 'harder';
+}
+
 const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
   concept,
   depth_target,
   current_depth,
-  bookName,
+  insight,
+  user_id,
   onClose,
   onLevelComplete,
 }) => {
+  console.log("🧩 EnhancedPracticeQuestions mounted");
+  console.log("🛬 Props received:", { insight, concept, current_depth, user_id });
+  
   const [questions, setQuestions] = useState<string[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
@@ -43,30 +79,49 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
   const [evaluating, setEvaluating] = useState(false);
   const [evaluationResults, setEvaluationResults] = useState<Record<number, EvaluationResult>>({});
   const [showResults, setShowResults] = useState(false);
+  const [sessionResponses, setSessionResponses] = useState<SessionResponse[]>([]);
+  const [savingResponses, setSavingResponses] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
+
+  // Early return if insight is not yet loaded
+  if (!insight) {
+    throw new Error("Critical error: insight data is undefined - cannot proceed with practice questions");
+  }
 
   useEffect(() => {
+    console.log("🚀 useEffect ran – insight is:", insight);
+    if (!insight || !insight.title) {
+      console.error("⚠️ Insight is missing or incomplete in useEffect.");
+      throw new Error("Critical error: insight or insight.title is undefined - cannot proceed with practice questions");
+    }
+
     fetchQuestions();
-  }, [concept, current_depth]);
+  }, [concept, current_depth, insight]);
 
   const fetchQuestions = async () => {
+    console.log("📡 fetchQuestions called with:", insight?.title);
     setLoading(true);
     setError(null);
     
     try {
       console.log(`Fetching questions for concept: ${concept}, current depth: ${current_depth} (of target: ${depth_target})`);
       
+      const requestPayload = {
+        concept,
+        depth_target: current_depth, // Use current_depth instead of final depth_target
+        book_title: insight?.title || 'unknown-book',
+        related_concepts: [],  // Could be dynamically populated in the future
+        mental_models_pool: []  // Could be dynamically populated in the future
+      };
+      
+      console.log("📦 Request payload:", requestPayload);
+      
       const response = await fetch(`${API_URL}/generate-questions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          concept,
-          depth_target: current_depth, // Use current_depth instead of final depth_target
-          book_title: bookName,
-          related_concepts: [],  // Could be dynamically populated in the future
-          mental_models_pool: []  // Could be dynamically populated in the future
-        })
+        body: JSON.stringify(requestPayload)
       });
       
       if (!response.ok) {
@@ -93,10 +148,16 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
         setError('No questions received');
       }
     } catch (err: any) {
-      console.error('Error fetching questions:', err);
+      console.error('❌ Failed to fetch questions:', err);
+      console.error('Error details:', {
+        message: err.message,
+        stack: err.stack,
+        name: err.name
+      });
       setError(err.message);
     } finally {
       setLoading(false);
+      console.log("⏱️ fetchQuestions completed - loading state set to false");
     }
   };
 
@@ -162,19 +223,240 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
   };
 
   const handleSubmitForEvaluation = async () => {
+    console.log("⚡ User triggered practice insert");
+    console.log("① handleSubmitForEvaluation ENTER");
+    console.log("🚀 handleSubmitForEvaluation() called");
     if (!validateAnswers()) return;
     
+    console.log("② validateAnswers passed");
     setEvaluating(true);
     const results: Record<number, any> = {};
     
     // Evaluate each answer
     for (let i = 0; i < questions.length; i++) {
-      results[i] = await evaluateAnswer(i);
+      console.log(`③ evaluating answer ${i}`);
+      const result = await evaluateAnswer(i);
+      if (!result || typeof result.simplified_score !== 'number') {
+        console.warn(`❌ Invalid evaluation result for question ${i}:`, result);
+        continue;
+      }
+      results[i] = result;
     }
     
+    console.log("④ all answers evaluated");
     setEvaluationResults(results);
     setShowResults(true);
     setEvaluating(false);
+    
+    // Track the responses for this level
+    const levelResponses: SessionResponse[] = questions.map((question, index) => ({
+      level: current_depth,
+      question,
+      answer: answers[index],
+      result: results[index],
+      auto_difficulty_next: determineNextDifficulty(results[index])
+    }));
+    
+    console.log("⑤ levelResponses created");
+    const newResponses = [...sessionResponses, ...levelResponses];
+    setSessionResponses(newResponses);
+    
+    console.log('⑥ user_id from props →', user_id);
+    if (!user_id) {
+      Alert.alert('Error', 'User not authenticated');
+      return;
+    }
+    
+    console.log("⑦ confirmed user_id is available");
+    await saveAllResponses(newResponses, user_id);
+    console.log("⑭ saveAllResponses completed");
+    console.log("⑯ handleSubmitForEvaluation EXIT");
+  };
+
+  const determineNextDifficulty = (result: EvaluationResult): 'easier' | 'same' | 'harder' => {
+    const score = result.simplified_score;
+    if (score < 2) return 'easier';
+    if (score > 4) return 'harder';
+    return 'same';
+  };
+
+  // Save all session responses to the database
+  const saveAllResponses = async (responsesToSave = sessionResponses, userId = user_id) => {
+    console.log("⑰ saveAllResponses ENTER");
+    console.log("🟡 saveAllResponses() triggered");
+    if (responsesToSave.length === 0) {
+      console.warn('🛑 saveAllResponses called with 0 responses – early exit');
+      console.log("⑱ saveAllResponses early EXIT - zero responses");
+      return;
+    }
+    
+    console.log("⑲ setting savingResponses to true");
+    setSavingResponses(true);
+    
+    try {
+      console.log("⑳ saveAllResponses try block ENTER");
+      // Use the provided userId parameter
+      let validatedUserId = userId;
+
+      // Validate required fields
+      if (!validatedUserId) {
+        console.log("㉒ validatedUserId not found");
+        throw new Error('User ID not found');
+      }
+      
+      if (!insight?.id) {
+        console.log("㉓ insight?.id not found");
+        throw new Error('Insight ID not found');
+      }
+      
+      // Get the book ID from the insight object
+      const book_id = insight?.book_id;
+      
+      // Debug log to verify book_id is a valid UUID string
+      console.log("㉔ book_id value:", typeof book_id, book_id);
+      
+      if (!book_id) {
+        console.log("㉕ book_id not found");
+        throw new Error('Book ID not found');
+      }
+
+      // Validate UUIDs
+      if (!isValidUUID(validatedUserId)) {
+        console.log("㉖ invalid validatedUserId format");
+        throw new Error(`Invalid user_id format: ${validatedUserId}`);
+      }
+      
+      if (!isValidUUID(book_id)) {
+        console.log("㉗ invalid book_id format");
+        throw new Error(`Invalid book_id format: ${book_id}`);
+      }
+      
+      if (!isValidUUID(insight.id)) {
+        console.log("㉘ invalid insight.id format");
+        throw new Error(`Invalid insight_id format: ${insight.id}`);
+      }
+      
+      console.log("㉙ all IDs validated inside saveAllResponses");
+      
+      // Insert each response
+      const savePromises = responsesToSave.map(async (response, i) => {
+        try {
+          console.log("📦 Attempting to insert practice session for:", {
+            i,
+            result: response.result,
+            insightId: insight?.id,
+            userId: validatedUserId,
+            bookId: book_id
+          });
+          
+          if (typeof response.result?.simplified_score !== 'number') {
+            console.warn("⚠️ Skipping invalid session response:", response);
+            return { success: false, error: 'Invalid score' };
+          }
+          
+          // Calculate eval_score as float between 0-1
+          const eval_score = response.result.simplified_score / 5;
+          
+          // Validate field types
+          if (typeof eval_score !== 'number' || isNaN(eval_score)) {
+            console.error("❌ Invalid eval_score type:", eval_score);
+            return { success: false, error: 'Invalid eval_score type' };
+          }
+          
+          // Create llm_feedback as proper JSON
+          const llm_feedback = {
+            ...response.result,
+            raw_score: response.result.simplified_score,
+            question: response.question,
+            level: response.level,
+          };
+          
+          // Check for missing or undefined required data before insert
+          if (!validatedUserId || !insight?.id || !response.answer || !response.result) {
+            console.error("❌ Missing data for insert:", {
+              validatedUserId,
+              insightId: insight?.id,
+              response: response,
+            });
+            return { success: false, error: 'Missing required fields for insert' };
+          }
+          
+          console.log("🛬 Insert payload:", {
+            user_id: validatedUserId!,
+            book_id,
+            insight_id: insight?.id,
+            response_text: response.answer,
+            eval_score: response.result.simplified_score / 5,
+            llm_feedback: {
+              ...response.result,
+              raw_score: response.result.simplified_score,
+              question: response.question,
+              level: response.level,
+            }
+          });
+          
+          try {
+            const insertResult = await insertPracticeSession({
+              user_id: validatedUserId!,
+              book_id,
+              insight_id: insight?.id,
+              response_text: response.answer,
+              llm_feedback,
+              eval_score,
+              auto_difficulty_next: response.auto_difficulty_next,
+            });
+
+            console.log("🟢 Insert result:", insertResult);
+            if (!insertResult.success) {
+              console.error("❌ Supabase insert failed:", insertResult.error);
+            }
+            
+            return { success: insertResult.success, error: insertResult.error };
+          } catch (e) {
+            console.error('Supabase threw →', e);
+            return { success: false, error: e instanceof Error ? e.message : 'Unknown error' };
+          }
+        } catch (error) {
+          console.error("❌ Exception during insert:", error);
+          return { success: false, error };
+        }
+      });
+
+      const results = await Promise.all(savePromises);
+      const allSuccessful = results.every(result => result.success);
+      
+      console.log('✅ saveAllResponses finished – results:', results);
+      
+      setSaveSuccess(allSuccessful);
+      
+      if (allSuccessful) {
+        Alert.alert(
+          'Success',
+          `Your responses have been saved successfully. You reached Level ${current_depth} of this concept.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Warning',
+          'Some responses could not be saved. Please try again later.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (err: any) {
+      console.error('㉚ Error in saveAllResponses:', err);
+      setSaveSuccess(false);
+      
+      Alert.alert(
+        'Error',
+        'There was a problem saving your responses. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      console.log("㉛ saveAllResponses finally block");
+      setSavingResponses(false);
+      console.log("㉜ saveAllResponses EXIT");
+    }
+    console.log("㉝ saveAllResponses absolute final EXIT log - this should always show");
   };
 
   const handleContinue = () => {
@@ -199,6 +481,39 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
         [{ text: 'OK' }]
       );
     }
+  };
+  
+  // Modified onClose handler to save responses before closing
+  const handleClose = async () => {
+    if (sessionResponses.length > 0) {
+      try {
+        console.log("🔑 IDs about to save →", { user_id, book_id: insight?.book_id, insight_id: insight?.id });
+        
+        // Validate critical IDs before saving
+        if (!user_id || !isValidUUID(user_id)) {
+          throw new Error(`Invalid user_id format: ${user_id}`);
+        }
+        
+        if (!insight?.book_id || !isValidUUID(insight.book_id)) {
+          throw new Error(`Invalid book_id format: ${insight?.book_id}`);
+        }
+        
+        if (!insight?.id || !isValidUUID(insight.id)) {
+          throw new Error(`Invalid insight_id format: ${insight?.id}`);
+        }
+        
+        console.log('🚦 About to call saveAllResponses');
+        await saveAllResponses();
+      } catch (err: any) {
+        console.error('Error validating IDs before closing:', err);
+        Alert.alert(
+          'Error',
+          `Cannot save responses: ${err.message}`,
+          [{ text: 'OK' }]
+        );
+      }
+    }
+    onClose();
   };
 
   // Get depth level name for display
@@ -312,7 +627,10 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
             {!showResults ? (
               <Button 
                 variant="primary" 
-                onPress={handleSubmitForEvaluation}
+                onPress={() => {
+                  console.log("🚨 Submit button pressed");
+                  handleSubmitForEvaluation();
+                }}
                 isLoading={evaluating}
                 disabled={evaluating}
               >
@@ -328,8 +646,13 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
                     : "Try Again (Improve Answers)"
                   }
                 </Button>
-                <Button variant="ghost" onPress={onClose}>
-                  Close
+                <Button 
+                  variant="ghost" 
+                  onPress={handleClose}
+                  isLoading={savingResponses}
+                  disabled={savingResponses}
+                >
+                  {savingResponses ? "Saving..." : "Close"}
                 </Button>
               </YStack>
             )}
@@ -340,4 +663,4 @@ const EnhancedPracticeQuestions: React.FC<PracticeQuestionsProps> = ({
   );
 };
 
-export default EnhancedPracticeQuestions; 
+export default EnhancedPracticeQuestions;

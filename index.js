@@ -3,12 +3,15 @@ import React from 'react';
 import { TamaguiProvider } from './components/ui/TamaguiProvider';
 import 'react-native-url-polyfill/auto';
 import EnhancedApp from './EnhancedApp';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Create root component with TamaguiProvider
 const Root = () => (
-  <TamaguiProvider>
-    <EnhancedApp />
-  </TamaguiProvider>
+  <ErrorBoundary>
+    <TamaguiProvider>
+      <EnhancedApp />
+    </TamaguiProvider>
+  </ErrorBoundary>
 );
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

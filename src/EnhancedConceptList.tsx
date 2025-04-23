@@ -6,6 +6,7 @@ import { Card, Heading, Button } from '../components/ui';
 interface ConceptItem {
   concept: string;
   depth_target: number;
+  insight_id: string;
 }
 
 interface EnhancedConceptListProps {
@@ -13,7 +14,7 @@ interface EnhancedConceptListProps {
   conceptsWithDepth: ConceptItem[];
   source?: string;
   depthSource?: string;
-  onPracticePress: (concept: string, depth_target: number) => void;
+  onPracticePress: (concept: string, depth_target: number, insight_id: string) => void;
 }
 
 const EnhancedConceptList: React.FC<EnhancedConceptListProps> = ({
@@ -84,7 +85,7 @@ const EnhancedConceptList: React.FC<EnhancedConceptListProps> = ({
                   </XStack>
                   <Button 
                     variant="secondary"
-                    onPress={() => onPracticePress(item.concept, item.depth_target)}
+                    onPress={() => onPracticePress(item.concept, item.depth_target, item.insight_id)}
                   >
                     Practice
                   </Button>
